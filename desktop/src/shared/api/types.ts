@@ -556,11 +556,12 @@ export type AcpRuntimeCatalogEntry = {
   /** Hint for completing authentication; null when not applicable or already logged in. */
   loginHint: string | null;
   /**
-   * Whether this entry is compiled into the app ("builtin") or loaded from a
-   * user JSON file in `custom_harnesses/` ("custom"). Controls editability in
-   * the UI — only "custom" entries can be edited or deleted.
+   * Whether this entry is compiled into the app ("builtin"), a bundled preset
+   * ("preset" — PATH-probed, not editable/deletable), or loaded from a user
+   * JSON file in `custom_harnesses/` ("custom"). Controls editability in the
+   * UI — only "custom" entries can be edited or deleted.
    */
-  source: "builtin" | "custom";
+  source: "builtin" | "preset" | "custom";
 };
 
 /** An AcpRuntimeCatalogEntry that is confirmed available — command and binaryPath are non-null. */

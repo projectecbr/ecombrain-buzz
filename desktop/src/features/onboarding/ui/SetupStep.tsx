@@ -711,6 +711,12 @@ function SetupStepContent({
         >
           Back
         </Button>
+
+        <p className="text-xs text-foreground/50">
+          More harnesses (Cursor, Grok, Amp&hellip;) available in{" "}
+          <span className="text-foreground/70">Settings → Agents</span> after
+          setup.
+        </p>
       </OnboardingFooter>
     </OnboardingSlideTransition>
   );

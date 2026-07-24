@@ -936,7 +936,7 @@ export type HarnessDefinitionInput = {
   label: string;
   command: string;
   args?: string[];
-  avatarUrl?: string;
+  env?: Record<string, string>;
   installInstructionsUrl?: string;
   installHint?: string;
 };
@@ -944,6 +944,7 @@ export type HarnessDefinitionInput = {
 /** Save (create or overwrite) a custom harness definition. Returns the catalog entry. */
 export async function saveCustomHarness(
   definition: HarnessDefinitionInput,
+  originalId?: string,
 ): Promise<AcpRuntimeCatalogEntry> {
   const raw = await invokeTauri<RawAcpRuntimeCatalogEntry>(
     "save_custom_harness",
@@ -953,10 +954,11 @@ export async function saveCustomHarness(
         label: definition.label,
         command: definition.command,
         args: definition.args ?? [],
-        avatarUrl: definition.avatarUrl ?? "",
+        env: definition.env ?? {},
         installInstructionsUrl: definition.installInstructionsUrl ?? "",
         installHint: definition.installHint ?? "",
       },
+      originalId: originalId ?? null,
     },
   );
   return fromRawAcpRuntimeCatalogEntry(raw);

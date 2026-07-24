@@ -243,8 +243,13 @@ export function useInstallAcpRuntimeMutation() {
 export function useSaveCustomHarnessMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (definition: HarnessDefinitionInput) =>
-      saveCustomHarness(definition),
+    mutationFn: ({
+      definition,
+      originalId,
+    }: {
+      definition: HarnessDefinitionInput;
+      originalId?: string;
+    }) => saveCustomHarness(definition, originalId),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: acpRuntimesQueryKey });
     },

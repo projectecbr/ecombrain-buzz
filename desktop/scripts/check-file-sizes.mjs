@@ -133,7 +133,11 @@ const overrides = new Map([
   // lowest env layer (+8 lines). Queued to split.
   // +2: BYOH orphan-sweep fix — `!belongs && !has_buzz_marker` OR-gate replaces
   // the old AND-gate so custom harness processes are not silently leaked on crash.
-  ["src-tauri/src/managed_agents/runtime.rs", 2218],
+  // +27: BYOH F4 fix — extract shared `buzz_sweep_owns_process` predicate, fix
+  // Linux AND-gate in sweep + orphan collectors, 4 production predicate tests.
+  // +12: BYOH F2 — record_agent_command / effective_agent_command check loaded
+  // harness registry for preset/custom ids after static-builtin lookup.
+  ["src-tauri/src/managed_agents/runtime.rs", 2259],
   // config-bridge setup-payload env-boundary fix adds readiness wiring in
   // spawn_agent_child; load-bearing security fix, queued to split.
   ["src-tauri/src/managed_agents/config_bridge/reader.rs", 1016],
@@ -302,7 +306,12 @@ const overrides = new Map([
   // ratcheting 1366 -> 1392 after adding the managed-path probes to discovery.
   // +17: BYOH custom harness catalog merge phase-3 — append custom definitions
   // from custom_harnesses_dir with PATH-probe availability; source tagging.
-  ["src-tauri/src/managed_agents/discovery.rs", 1410],
+  // +148: BYOH F2/F3 — PRESET_HARNESSES static data (6 presets), Phase 2.5 in
+  // discover_acp_runtimes_from (PATH-probe each preset, build catalog entries,
+  // populate loaded-harness registry), record/effective command resolution now
+  // checks loaded registry for preset/custom ids. Queued to split presets out.
+  // +3: BYOH F5 — seen_ids rejects preset/builtin collisions from custom files.
+  ["src-tauri/src/managed_agents/discovery.rs", 1561],
   // rebase over codex-acp-package-swap: its version-probe tests union with the
   // doctor-install-reliability nvm/login-shell/semver tests — each side alone
   // stayed under the 1000 default; the union exceeds it.
@@ -507,7 +516,8 @@ const overrides = new Map([
   // +126: BYOH — save_custom_harness (validate, atomic write, return entry) +
   // delete_custom_harness (id-guard, builtin reject, remove file) commands;
   // discover_acp_providers updated to pass AppHandle + custom_harnesses dir.
-  ["src-tauri/src/commands/agent_discovery.rs", 1936],
+  // +30: BYOH F5 — atomic-write-file dep, original_id rename/delete support.
+  ["src-tauri/src/commands/agent_discovery.rs", 1966],
   // draft-persistence predicate: submit-time `loadDraft` check + inline comment
   // + deps-array entry in submitMessage closes the never-persisted-boundary
   // defect (Thufir Pass-3 finding). Load-bearing correctness fix; queued to

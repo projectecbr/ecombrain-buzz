@@ -14,109 +14,27 @@ import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Spinner } from "@/shared/ui/spinner";
 
+import {
+  getRuntimeDisplayLabel,
+  RuntimeIcon,
+} from "../../onboarding/ui/RuntimeIcon";
+import { buildEnvRecord, filterArgs, idFromLabel } from "./harnessFormLogic";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 
-// ── Preset definitions ────────────────────────────────────────────────────────
-//
-// These seed the gallery. command/args/installInstructionsUrl verified against
-// vendor docs and held PRs (#2536 cursor, #2573 omp, #2546 grok, #2370 opencode,
-// #2365 kimi). amp-acp verified from https://github.com/tao12345666333/amp-acp.
-
-interface HarnessPreset {
-  id: string;
-  label: string;
-  command: string;
-  args: string[];
-  installInstructionsUrl: string;
-  logoPath: string;
-}
-
-const HARNESS_PRESETS: HarnessPreset[] = [
-  {
-    id: "cursor",
-    label: "Cursor",
-    command: "cursor-agent",
-    args: ["acp"],
-    installInstructionsUrl: "https://cursor.com/downloads",
-    logoPath: "/harness-logos/cursor.png",
-  },
-  {
-    id: "omp",
-    label: "Oh My Pi",
-    command: "omp",
-    args: ["acp"],
-    installInstructionsUrl: "https://ohmyposh.dev/docs/installation/linux",
-    logoPath: "/harness-logos/omp.png",
-  },
-  {
-    id: "grok",
-    label: "Grok Build",
-    command: "grok",
-    args: ["agent", "--always-approve", "stdio"],
-    installInstructionsUrl: "https://build.x.ai/docs",
-    logoPath: "/harness-logos/grok.png",
-  },
-  {
-    id: "opencode",
-    label: "OpenCode",
-    command: "opencode",
-    args: ["acp"],
-    installInstructionsUrl: "https://opencode.ai/docs",
-    logoPath: "/harness-logos/opencode.svg",
-  },
-  {
-    id: "kimi",
-    label: "Kimi Code",
-    command: "kimi",
-    args: ["acp"],
-    installInstructionsUrl: "https://kimi.ai/download",
-    logoPath: "/harness-logos/kimi.png",
-  },
-  {
-    id: "amp",
-    label: "Amp",
-    command: "amp-acp",
-    args: [],
-    installInstructionsUrl: "https://github.com/tao12345666333/amp-acp",
-    logoPath: "/harness-logos/amp.png",
-  },
-];
-
-// ── Logo component ────────────────────────────────────────────────────────────
-
-function PresetLogo({ logoPath, label }: { logoPath: string; label: string }) {
-  const [errored, setErrored] = React.useState(false);
-  if (errored) {
-    return (
-      <Terminal aria-hidden="true" className="h-6 w-6 text-muted-foreground" />
-    );
-  }
-  return (
-    <img
-      alt={label}
-      className="h-8 w-8 rounded-lg object-contain"
-      onError={() => setErrored(true)}
-      src={logoPath}
-    />
-  );
-}
-
 // ── Preset card ───────────────────────────────────────────────────────────────
+//
+// Preset entries come from the backend catalog (source === "preset"), so we no
+// longer maintain a duplicate HARNESS_PRESETS array here. The backend
+// PRESET_HARNESSES static drives availability detection and canonical data.
 
 function PresetCard({
-  catalog,
-  preset,
+  entry,
   onAdd,
 }: {
-  catalog: AcpRuntimeCatalogEntry[];
-  preset: HarnessPreset;
-  onAdd: (preset: HarnessPreset) => void;
+  entry: AcpRuntimeCatalogEntry;
+  onAdd: (entry: AcpRuntimeCatalogEntry) => void;
 }) {
-  // Check if this preset is already in the catalog (builtin or custom).
-  const existing = catalog.find((e) => e.id === preset.id);
-  const isDetected = existing?.availability === "available";
-  const isAlreadySaved = existing?.source === "custom";
-  const isBuiltin = existing?.source === "builtin";
+  const isDetected = entry.availability === "available";
 
   return (
     <div
@@ -126,15 +44,19 @@ function PresetCard({
           ? "border-emerald-500/20 bg-emerald-500/5"
           : "border-border/60 bg-muted/20",
       )}
-      data-testid={`harness-preset-${preset.id}`}
+      data-testid={`harness-preset-${entry.id}`}
     >
       <div className="flex items-center gap-3">
-        <PresetLogo label={preset.label} logoPath={preset.logoPath} />
+        <RuntimeIcon className="h-8 w-8" runtime={entry} />
         <div className="min-w-0 flex-1">
-          <p className="font-medium leading-none">{preset.label}</p>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {preset.command}
+          <p className="font-medium leading-none">
+            {getRuntimeDisplayLabel(entry)}
           </p>
+          {entry.command ? (
+            <p className="mt-1 font-mono text-xs text-muted-foreground">
+              {entry.command}
+            </p>
+          ) : null}
         </div>
         {isDetected ? (
           <span className="inline-flex shrink-0 items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
@@ -145,31 +67,21 @@ function PresetCard({
 
       {/* Action row */}
       <div className="flex items-center gap-2">
-        {isBuiltin ? (
-          <span className="text-xs text-muted-foreground">
-            Built-in runtime
-          </span>
-        ) : isAlreadySaved ? (
-          <span className="text-xs text-muted-foreground">
-            Already added as custom harness
-          </span>
-        ) : (
-          <Button
-            className="h-7 px-3 text-xs"
-            data-testid={`harness-preset-add-${preset.id}`}
-            onClick={() => onAdd(preset)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" />
-            Add
-          </Button>
-        )}
+        <Button
+          className="h-7 px-3 text-xs"
+          data-testid={`harness-preset-add-${entry.id}`}
+          onClick={() => onAdd(entry)}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          Add
+        </Button>
         {!isDetected ? (
           <button
             className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            onClick={() => void openUrl(preset.installInstructionsUrl)}
+            onClick={() => void openUrl(entry.installInstructionsUrl)}
             type="button"
           >
             <ExternalLink className="h-3.5 w-3.5" />
@@ -187,7 +99,10 @@ interface CustomFormValues {
   id: string;
   label: string;
   command: string;
-  args: string;
+  /** Each element is one argument; no space-splitting round-trip. */
+  args: string[];
+  /** KEY=VALUE pairs for env injection at spawn time. */
+  env: Array<{ key: string; value: string }>;
   installInstructionsUrl: string;
   installHint: string;
 }
@@ -196,19 +111,11 @@ const EMPTY_FORM: CustomFormValues = {
   id: "",
   label: "",
   command: "",
-  args: "",
+  args: [],
+  env: [],
   installInstructionsUrl: "",
   installHint: "",
 };
-
-function idFromLabel(label: string): string {
-  return label
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, "-")
-    .replace(/^[^a-z0-9_]/, "")
-    .replace(/-{2,}/g, "-")
-    .replace(/-+$/, "");
-}
 
 function CommandAvailabilityBadge({ command }: { command: string }) {
   const trimmed = command.trim();
@@ -235,12 +142,135 @@ function CommandAvailabilityBadge({ command }: { command: string }) {
   );
 }
 
+function ArgsEditor({
+  args,
+  onChange,
+}: {
+  args: string[];
+  onChange: (next: string[]) => void;
+}) {
+  function set(index: number, value: string) {
+    const next = [...args];
+    next[index] = value;
+    onChange(next);
+  }
+
+  function add() {
+    onChange([...args, ""]);
+  }
+
+  function remove(index: number) {
+    onChange(args.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {args.map((arg, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional arg list
+        <div className="flex gap-1.5" key={i}>
+          <Input
+            className="h-8 flex-1 font-mono text-sm"
+            onChange={(e) => set(i, e.target.value)}
+            placeholder={`arg ${i + 1}`}
+            value={arg}
+          />
+          <button
+            aria-label="Remove argument"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => remove(i)}
+            type="button"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <Button
+        className="h-7 gap-1.5 px-3 text-xs"
+        onClick={add}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add argument
+      </Button>
+    </div>
+  );
+}
+
+function EnvEditor({
+  env,
+  onChange,
+}: {
+  env: Array<{ key: string; value: string }>;
+  onChange: (next: Array<{ key: string; value: string }>) => void;
+}) {
+  function set(index: number, field: "key" | "value", value: string) {
+    const next = env.map((e, i) =>
+      i === index ? { ...e, [field]: value } : e,
+    );
+    onChange(next);
+  }
+
+  function add() {
+    onChange([...env, { key: "", value: "" }]);
+  }
+
+  function remove(index: number) {
+    onChange(env.filter((_, i) => i !== index));
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {env.map((pair, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional env list
+        <div className="flex gap-1.5" key={i}>
+          <Input
+            className="h-8 w-1/3 font-mono text-sm"
+            onChange={(e) => set(i, "key", e.target.value)}
+            placeholder="KEY"
+            value={pair.key}
+          />
+          <Input
+            className="h-8 flex-1 font-mono text-sm"
+            onChange={(e) => set(i, "value", e.target.value)}
+            placeholder="value"
+            value={pair.value}
+          />
+          <button
+            aria-label="Remove env var"
+            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={() => remove(i)}
+            type="button"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      <Button
+        className="h-7 gap-1.5 px-3 text-xs"
+        onClick={add}
+        size="sm"
+        type="button"
+        variant="ghost"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        Add env var
+      </Button>
+    </div>
+  );
+}
+
 function CustomHarnessForm({
   initial,
+  originalId,
   onCancel,
   onSaved,
 }: {
   initial?: Partial<CustomFormValues>;
+  /** Id of the harness being edited, if this is an edit (not new). Used to
+   * delete the old file when the id changes. */
+  originalId?: string;
   onCancel: () => void;
   onSaved: () => void;
 }) {
@@ -251,7 +281,12 @@ function CustomHarnessForm({
   const [error, setError] = React.useState<string | null>(null);
   const save = useSaveCustomHarnessMutation();
 
-  function field(key: keyof CustomFormValues) {
+  function field(
+    key: keyof Pick<
+      CustomFormValues,
+      "id" | "label" | "command" | "installInstructionsUrl" | "installHint"
+    >,
+  ) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
       const value = e.target.value;
       setForm((prev) => {
@@ -271,19 +306,18 @@ function CustomHarnessForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const argsArray = form.args
-      .split(/\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
     try {
       await save.mutateAsync({
-        id: form.id.trim(),
-        label: form.label.trim(),
-        command: form.command.trim(),
-        args: argsArray,
-        avatarUrl: "",
-        installInstructionsUrl: form.installInstructionsUrl.trim(),
-        installHint: form.installHint.trim(),
+        definition: {
+          id: form.id.trim(),
+          label: form.label.trim(),
+          command: form.command.trim(),
+          args: filterArgs(form.args),
+          env: buildEnvRecord(form.env),
+          installInstructionsUrl: form.installInstructionsUrl.trim(),
+          installHint: form.installHint.trim(),
+        },
+        originalId,
       });
       onSaved();
     } catch (err) {
@@ -298,7 +332,9 @@ function CustomHarnessForm({
       onSubmit={(e) => void handleSubmit(e)}
     >
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium">Add custom harness</p>
+        <p className="text-sm font-medium">
+          {originalId ? "Edit harness" : "Add custom harness"}
+        </p>
         <button
           aria-label="Cancel"
           className="rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
@@ -352,16 +388,23 @@ function CustomHarnessForm({
       </div>
 
       <div className="space-y-1">
+        <p className="text-xs text-muted-foreground">Arguments</p>
+        <ArgsEditor
+          args={form.args}
+          onChange={(args) => setForm((p) => ({ ...p, args }))}
+        />
+      </div>
+
+      <div className="space-y-1">
         <p className="text-xs text-muted-foreground">
-          Arguments{" "}
-          <span className="text-muted-foreground/60">(space-separated)</span>
+          Env vars{" "}
+          <span className="text-muted-foreground/60">
+            (override at spawn time; Buzz-managed vars always win)
+          </span>
         </p>
-        <Input
-          className="h-8 font-mono text-sm"
-          id="ch-args"
-          onChange={field("args")}
-          placeholder="acp"
-          value={form.args}
+        <EnvEditor
+          env={form.env}
+          onChange={(env) => setForm((p) => ({ ...p, env }))}
         />
       </div>
 
@@ -402,6 +445,7 @@ function CustomHarnessForm({
 function CustomHarnessRow({ entry }: { entry: AcpRuntimeCatalogEntry }) {
   const [editing, setEditing] = React.useState(false);
   const [confirmingDelete, setConfirmingDelete] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState<string | null>(null);
   const del = useDeleteCustomHarnessMutation();
 
   if (editing) {
@@ -411,9 +455,10 @@ function CustomHarnessRow({ entry }: { entry: AcpRuntimeCatalogEntry }) {
           id: entry.id,
           label: entry.label,
           command: entry.command ?? "",
-          args: (entry.defaultArgs ?? []).join(" "),
+          args: entry.defaultArgs ?? [],
           installInstructionsUrl: entry.installInstructionsUrl,
         }}
+        originalId={entry.id}
         onCancel={() => setEditing(false)}
         onSaved={() => setEditing(false)}
       />
@@ -422,77 +467,98 @@ function CustomHarnessRow({ entry }: { entry: AcpRuntimeCatalogEntry }) {
 
   return (
     <div
-      className="flex items-center gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm"
+      className="flex flex-col gap-2 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm"
       data-testid={`custom-harness-row-${entry.id}`}
     >
-      <Terminal className="h-6 w-6 shrink-0 text-muted-foreground" />
-      <div className="min-w-0 flex-1">
-        <p className="font-medium leading-none">{entry.label}</p>
-        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-          {entry.command ?? entry.id}
-          {(entry.defaultArgs ?? []).length > 0
-            ? " " + (entry.defaultArgs ?? []).join(" ")
-            : ""}
-        </p>
-      </div>
-      {entry.availability === "available" ? (
-        <span className="inline-flex shrink-0 items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-          Detected
-        </span>
-      ) : (
-        <span className="inline-flex shrink-0 items-center rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-          Not installed
-        </span>
-      )}
-      <div className="flex shrink-0 items-center gap-1">
-        <Button
-          className="h-7 px-3 text-xs"
-          data-testid={`custom-harness-edit-${entry.id}`}
-          onClick={() => setEditing(true)}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Edit
-        </Button>
-        {confirmingDelete ? (
-          <>
-            <Button
-              className="h-7 px-3 text-xs"
-              data-testid={`custom-harness-delete-confirm-${entry.id}`}
-              disabled={del.isPending}
-              onClick={() => {
-                void del.mutateAsync(entry.id).catch(() => {});
-                setConfirmingDelete(false);
-              }}
-              size="sm"
-              type="button"
-              variant="destructive"
-            >
-              {del.isPending ? <Spinner className="h-3.5 w-3.5" /> : "Delete"}
-            </Button>
-            <Button
-              className="h-7 px-3 text-xs"
-              onClick={() => setConfirmingDelete(false)}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-          </>
+      <div className="flex items-center gap-3">
+        <Terminal className="h-6 w-6 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="font-medium leading-none">{entry.label}</p>
+          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+            {entry.command ?? entry.id}
+            {(entry.defaultArgs ?? []).length > 0
+              ? ` ${(entry.defaultArgs ?? []).join(" ")}`
+              : ""}
+          </p>
+        </div>
+        {entry.availability === "available" ? (
+          <span className="inline-flex shrink-0 items-center rounded-md bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            Detected
+          </span>
         ) : (
-          <button
-            aria-label={`Delete ${entry.label}`}
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-            data-testid={`custom-harness-delete-${entry.id}`}
-            onClick={() => setConfirmingDelete(true)}
-            type="button"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <span className="inline-flex shrink-0 items-center rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            Not installed
+          </span>
         )}
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            className="h-7 px-3 text-xs"
+            data-testid={`custom-harness-edit-${entry.id}`}
+            onClick={() => setEditing(true)}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            Edit
+          </Button>
+          {confirmingDelete ? (
+            <>
+              <Button
+                className="h-7 px-3 text-xs"
+                data-testid={`custom-harness-delete-confirm-${entry.id}`}
+                disabled={del.isPending}
+                onClick={() => {
+                  setDeleteError(null);
+                  del.mutate(entry.id, {
+                    onSuccess: () => setConfirmingDelete(false),
+                    onError: (err) => {
+                      setDeleteError(
+                        err instanceof Error ? err.message : String(err),
+                      );
+                      // Keep confirmation open so user sees the error.
+                    },
+                  });
+                }}
+                size="sm"
+                type="button"
+                variant="destructive"
+              >
+                {del.isPending ? <Spinner className="h-3.5 w-3.5" /> : "Delete"}
+              </Button>
+              <Button
+                className="h-7 px-3 text-xs"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  setDeleteError(null);
+                }}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <button
+              aria-label={`Delete ${entry.label}`}
+              className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              data-testid={`custom-harness-delete-${entry.id}`}
+              onClick={() => {
+                setDeleteError(null);
+                setConfirmingDelete(true);
+              }}
+              type="button"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       </div>
+      {deleteError ? (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive">
+          {deleteError}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -507,15 +573,25 @@ export function HarnessManagementCard() {
     Partial<CustomFormValues> | undefined
   >(undefined);
 
+  // Preset entries come from the backend catalog; sort detected-first.
+  const presetEntries = React.useMemo(() => {
+    const presets = catalog.filter((e) => e.source === "preset");
+    return [...presets].sort((a, b) => {
+      const aDetected = a.availability === "available" ? 0 : 1;
+      const bDetected = b.availability === "available" ? 0 : 1;
+      return aDetected - bDetected;
+    });
+  }, [catalog]);
+
   const customEntries = catalog.filter((e) => e.source === "custom");
 
-  function handlePresetAdd(preset: HarnessPreset) {
+  function handlePresetAdd(entry: AcpRuntimeCatalogEntry) {
     setPresetPrefill({
-      id: preset.id,
-      label: preset.label,
-      command: preset.command,
-      args: preset.args.join(" "),
-      installInstructionsUrl: preset.installInstructionsUrl,
+      id: entry.id,
+      label: entry.label,
+      command: entry.command ?? "",
+      args: entry.defaultArgs ?? [],
+      installInstructionsUrl: entry.installInstructionsUrl,
     });
     setShowForm(true);
   }
@@ -535,23 +611,24 @@ export function HarnessManagementCard() {
         description="Register any ACP-speaking agent tool as a selectable runtime. Pick from presets or add a custom command."
       />
 
-      {/* Preset gallery */}
-      <div className="space-y-3">
-        <p className="text-sm font-medium">Presets</p>
-        <div
-          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
-          data-testid="harness-preset-gallery"
-        >
-          {HARNESS_PRESETS.map((preset) => (
-            <PresetCard
-              catalog={catalog}
-              key={preset.id}
-              onAdd={handlePresetAdd}
-              preset={preset}
-            />
-          ))}
+      {/* Preset gallery — driven from backend catalog, detected-first */}
+      {presetEntries.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-sm font-medium">Presets</p>
+          <div
+            className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            data-testid="harness-preset-gallery"
+          >
+            {presetEntries.map((entry) => (
+              <PresetCard
+                entry={entry}
+                key={entry.id}
+                onAdd={handlePresetAdd}
+              />
+            ))}
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {/* Custom harnesses list */}
       {customEntries.length > 0 ? (
