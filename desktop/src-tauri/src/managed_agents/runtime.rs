@@ -602,11 +602,7 @@ pub(crate) fn sweep_system_agent_processes(instance_id: &str, skip_pids: &[u32])
         if skip_pids.contains(&upid) || pid == my_pid {
             continue;
         }
-        // Check binary name first (cheap proc_name call) before UID lookup.
-        if !process_belongs_to_us(upid) {
-            continue;
-        }
-        // Verify UID and PPID via proc_pidinfo.
+        // Verify UID and PPID via proc_pidinfo before the more expensive env scan.
         let mut info = std::mem::MaybeUninit::<BSDInfo>::zeroed();
         let ret = unsafe {
             proc_pidinfo(
@@ -622,6 +618,13 @@ pub(crate) fn sweep_system_agent_processes(instance_id: &str, skip_pids: &[u32])
         }
         let info = unsafe { info.assume_init() };
         if info.pbi_uid != my_uid {
+            continue;
+        }
+        // Name-check is a cheap fast-path for known binaries. Custom harnesses
+        // don't match KNOWN_AGENT_BINARIES by name — fall through to the
+        // BUZZ_MANAGED_AGENT env marker check which is the authoritative proof
+        // of Buzz-managed ownership.
+        if !process_belongs_to_us(upid) && !process_has_buzz_marker(upid, instance_id) {
             continue;
         }
         if !process_has_buzz_marker(upid, instance_id) {
@@ -767,9 +770,6 @@ pub(crate) fn collect_same_instance_orphans(
         if skip_pids.contains(&upid) {
             continue;
         }
-        if !process_belongs_to_us(upid) {
-            continue;
-        }
         let mut info = std::mem::MaybeUninit::<BSDInfo>::zeroed();
         let ret = unsafe {
             proc_pidinfo(
@@ -785,6 +785,11 @@ pub(crate) fn collect_same_instance_orphans(
         }
         let info = unsafe { info.assume_init() };
         if info.pbi_uid != my_uid {
+            continue;
+        }
+        // Custom harnesses don't match KNOWN_AGENT_BINARIES by name; the
+        // BUZZ_MANAGED_AGENT env marker is the authoritative ownership proof.
+        if !process_belongs_to_us(upid) && !process_has_buzz_marker(upid, instance_id) {
             continue;
         }
         if !process_has_buzz_marker(upid, instance_id) {

@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use crate::managed_agents::{
     buzz_managed_command_path, buzz_managed_node_bin_dir, buzz_managed_npm_bin_dir,
     AcpAvailabilityStatus, AcpRuntimeCatalogEntry, AuthStatus, CommandAvailabilityInfo,
+    HarnessSource,
 };
 
 mod runtime_metadata;
@@ -1158,8 +1159,22 @@ struct PartialEntry {
     entry: AcpRuntimeCatalogEntry,
 }
 
-pub fn discover_acp_runtimes() -> Vec<AcpRuntimeCatalogEntry> {
-    // Phase 1: build all entries (fast — no probes yet).
+/// Discover all ACP runtimes, optionally merging user-defined custom harnesses
+/// from `custom_harnesses_dir`.
+///
+/// This is the primary entry point used by the Tauri command layer. It:
+/// 1. Builds entries for all compiled-in (`Builtin`) runtimes.
+/// 2. Runs auth probes in parallel.
+/// 3. If `custom_harnesses_dir` is `Some`, loads `*.json` files from that
+///    directory and appends `Custom` entries — no auth probe, command resolved
+///    via PATH, availability is `Available` or `NotInstalled`.
+///
+/// The custom dir is re-scanned on every call (goose `refresh_custom_providers`
+/// pattern) — no caching, no restart needed to pick up new files.
+pub fn discover_acp_runtimes_from(
+    custom_harnesses_dir: Option<&Path>,
+) -> Vec<AcpRuntimeCatalogEntry> {
+    // Phase 1: build all builtin entries (fast — no probes yet).
     let mut partials: Vec<PartialEntry> = KNOWN_ACP_RUNTIMES
         .iter()
         .map(|runtime| {
@@ -1258,6 +1273,7 @@ pub fn discover_acp_runtimes() -> Vec<AcpRuntimeCatalogEntry> {
                     // Filled in by the probe phase below.
                     auth_status: AuthStatus::Unknown,
                     login_hint: None,
+                    source: HarnessSource::Builtin,
                 },
             }
         })
@@ -1312,7 +1328,76 @@ pub fn discover_acp_runtimes() -> Vec<AcpRuntimeCatalogEntry> {
         }
     }
 
-    partials.into_iter().map(|p| p.entry).collect()
+    let mut entries: Vec<AcpRuntimeCatalogEntry> = partials.into_iter().map(|p| p.entry).collect();
+
+    // Phase 3: load and append custom harness definitions.
+    if let Some(dir) = custom_harnesses_dir {
+        let builtin_ids: std::collections::HashSet<String> =
+            entries.iter().map(|e| e.id.clone()).collect();
+
+        for def in crate::managed_agents::custom_harnesses::load_custom_harnesses(dir) {
+            // Collision check: a custom file must not shadow a built-in id.
+            if let Err(reason) =
+                crate::managed_agents::custom_harnesses::check_id_collision(&def.id)
+            {
+                eprintln!("custom_harnesses: skipping {}: {reason}", def.id);
+                continue;
+            }
+            // Also reject duplicates within the custom set itself.
+            if builtin_ids.contains(&def.id) {
+                eprintln!("custom_harnesses: skipping duplicate id {:?}", def.id);
+                continue;
+            }
+
+            // Availability: command on PATH → Available, else NotInstalled.
+            let (availability, command, binary_path) = match find_command(&def.command) {
+                Some(path) => (
+                    AcpAvailabilityStatus::Available,
+                    Some(def.command.clone()),
+                    Some(path.display().to_string()),
+                ),
+                None => (AcpAvailabilityStatus::NotInstalled, None, None),
+            };
+
+            let default_args = normalize_agent_args(&def.command, def.args.clone());
+
+            entries.push(AcpRuntimeCatalogEntry {
+                id: def.id,
+                label: def.label,
+                avatar_url: def.avatar_url,
+                availability,
+                command,
+                binary_path,
+                default_args,
+                // Custom harnesses are plain ACP — no MCP sidecar, no env-var
+                // model switching, no thinking knobs.
+                mcp_command: None,
+                model_env_var: None,
+                provider_env_var: None,
+                thinking_env_var: None,
+                install_hint: def.install_hint,
+                install_instructions_url: def.install_instructions_url,
+                // Security line: custom definitions carry no install scripts.
+                can_auto_install: false,
+                underlying_cli_path: None,
+                node_required: false,
+                // No auth probe for custom harnesses.
+                auth_status: AuthStatus::NotApplicable,
+                login_hint: None,
+                source: HarnessSource::Custom,
+            });
+        }
+    }
+
+    entries
+}
+
+/// Discover all compiled-in ACP runtimes without loading custom harnesses.
+///
+/// Kept for call sites that don't have access to the app-data directory (tests,
+/// internal helpers). Production code should call `discover_acp_runtimes_from`.
+pub fn discover_acp_runtimes() -> Vec<AcpRuntimeCatalogEntry> {
+    discover_acp_runtimes_from(None)
 }
 
 pub fn managed_agent_avatar_url(command: &str) -> Option<String> {

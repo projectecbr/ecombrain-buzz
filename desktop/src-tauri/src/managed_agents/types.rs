@@ -565,6 +565,17 @@ pub enum AuthStatus {
     Unknown,
 }
 
+/// Origin of an ACP runtime catalog entry. Serializes as a lowercase string
+/// so the TypeScript consumer can switch on it without numeric comparisons.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HarnessSource {
+    /// Compiled into the app — one of the four first-class runtimes.
+    Builtin,
+    /// Loaded at runtime from the user's `custom_harnesses/` directory.
+    Custom,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct AcpRuntimeCatalogEntry {
     pub id: String,
@@ -594,6 +605,9 @@ pub struct AcpRuntimeCatalogEntry {
     /// Hint for completing authentication, shown when `auth_status` is not `logged_in`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub login_hint: Option<String>,
+    /// Whether this entry came from the compiled-in catalog or a user-supplied
+    /// JSON file in `custom_harnesses/`. The UI uses this to decide editability.
+    pub source: HarnessSource,
 }
 
 /// Result of a single install step (CLI or adapter).

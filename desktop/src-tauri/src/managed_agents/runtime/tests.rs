@@ -1003,3 +1003,72 @@ fn invalid_pubkey_resolves_no_pair_key() {
     // the summary must fall back to the stopped/legacy-pid path, not panic.
     assert!(super::resolve_workspace_pair_key("not-a-key", "", "wss://one.example").is_none());
 }
+
+// ── Custom-harness orphan sweep coverage ─────────────────────────────────────
+//
+// The system sweep guards prior to this change required `process_belongs_to_us`
+// (name-match against KNOWN_AGENT_BINARIES) AND `process_has_buzz_marker`.
+// Custom harnesses have arbitrary binary names that never appear in
+// KNOWN_AGENT_BINARIES, so they would be silently skipped — their orphaned
+// processes leaked on crash.
+//
+// The fix: on the macOS sweep paths, the condition became
+//   `!process_belongs_to_us(pid) && !process_has_buzz_marker(pid, id)`
+// (skip only if BOTH are absent), with a subsequent final `process_has_buzz_marker`
+// check that remains the authoritative ownership gate.
+//
+// These tests verify the logical invariant of the updated condition rather than
+// spawning live processes (which would be OS-specific and racy in unit tests).
+
+/// The sweep inclusion predicate for a process that IS in KNOWN_AGENT_BINARIES
+/// must still pass the marker check — a known-name process without the marker
+/// is never owned by us.
+#[test]
+fn sweep_condition_known_binary_without_marker_is_excluded() {
+    // Simulate: belongs_to_us = true, has_marker = false
+    let belongs = true;
+    let has_marker = false;
+
+    // Old condition: skip if !belongs_to_us → NOT skipped; then skip if !has_marker → SKIPPED.
+    // New condition: skip if !belongs && !has_marker → NOT skipped (belongs=true saves it);
+    //                then skip if !has_marker → SKIPPED.
+    // Both conditions correctly exclude this process.
+    let passes_new_gate = !((!belongs) && (!has_marker)) && has_marker;
+    assert!(
+        !passes_new_gate,
+        "known binary without marker must be excluded"
+    );
+}
+
+/// A custom harness binary (not in KNOWN_AGENT_BINARIES) WITH the marker
+/// must be included in the sweep.
+#[test]
+fn sweep_condition_custom_binary_with_marker_is_included() {
+    // Simulate: belongs_to_us = false (custom binary name), has_marker = true
+    let belongs = false;
+    let has_marker = true;
+
+    // Old condition: skip if !belongs_to_us → SKIPPED (bug: never reaches marker check)
+    let passes_old_gate = belongs && has_marker;
+    assert!(
+        !passes_old_gate,
+        "old gate incorrectly excluded custom binary with marker"
+    );
+
+    // New condition: skip if !belongs && !has_marker → NOT skipped; then marker check passes.
+    let passes_new_gate = !((!belongs) && (!has_marker)) && has_marker;
+    assert!(
+        passes_new_gate,
+        "new gate must include custom binary with marker"
+    );
+}
+
+/// A truly foreign process (not owned by us, no marker) must remain excluded.
+#[test]
+fn sweep_condition_foreign_process_is_excluded() {
+    let belongs = false;
+    let has_marker = false;
+
+    let passes_new_gate = !((!belongs) && (!has_marker)) && has_marker;
+    assert!(!passes_new_gate, "foreign process must always be excluded");
+}

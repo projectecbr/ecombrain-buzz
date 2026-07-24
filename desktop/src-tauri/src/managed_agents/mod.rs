@@ -7,6 +7,7 @@ pub(crate) use agent_env::{
 };
 mod backend;
 pub(crate) mod config_bridge;
+pub(crate) mod custom_harnesses;
 mod discovery;
 mod env_vars;
 pub(crate) mod git_bash;

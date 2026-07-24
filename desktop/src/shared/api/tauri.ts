@@ -189,6 +189,7 @@ export type RawAcpRuntimeCatalogEntry = {
   /** Tagged union with snake_case status values — same shape as `AuthStatus`. */
   auth_status: AuthStatus;
   login_hint?: string;
+  source: "builtin" | "custom";
 };
 
 export type RawInstallStepResult = {
@@ -747,6 +748,7 @@ function fromRawAcpRuntimeCatalogEntry(
     nodeRequired: entry.node_required,
     authStatus: entry.auth_status,
     loginHint: entry.login_hint ?? null,
+    source: entry.source,
   };
 }
 
@@ -926,6 +928,43 @@ export async function discoverAcpRuntimes(): Promise<AcpRuntimeCatalogEntry[]> {
   return (
     await invokeTauri<RawAcpRuntimeCatalogEntry[]>("discover_acp_providers")
   ).map(fromRawAcpRuntimeCatalogEntry);
+}
+
+/** Input shape for creating or updating a custom harness. */
+export type HarnessDefinitionInput = {
+  id: string;
+  label: string;
+  command: string;
+  args?: string[];
+  avatarUrl?: string;
+  installInstructionsUrl?: string;
+  installHint?: string;
+};
+
+/** Save (create or overwrite) a custom harness definition. Returns the catalog entry. */
+export async function saveCustomHarness(
+  definition: HarnessDefinitionInput,
+): Promise<AcpRuntimeCatalogEntry> {
+  const raw = await invokeTauri<RawAcpRuntimeCatalogEntry>(
+    "save_custom_harness",
+    {
+      definition: {
+        id: definition.id,
+        label: definition.label,
+        command: definition.command,
+        args: definition.args ?? [],
+        avatarUrl: definition.avatarUrl ?? "",
+        installInstructionsUrl: definition.installInstructionsUrl ?? "",
+        installHint: definition.installHint ?? "",
+      },
+    },
+  );
+  return fromRawAcpRuntimeCatalogEntry(raw);
+}
+
+/** Delete a custom harness definition by id. No-op if already gone. */
+export async function deleteCustomHarness(id: string): Promise<void> {
+  await invokeTauri<void>("delete_custom_harness", { id });
 }
 
 export async function installAcpRuntime(

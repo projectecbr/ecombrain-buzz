@@ -21,6 +21,7 @@ import { evictUsersBatchEntries } from "@/features/profile/hooks";
 import {
   createManagedAgent,
   deleteManagedAgent,
+  deleteCustomHarness,
   discoverAcpRuntimes,
   discoverBackendProviders,
   discoverGitBashPrerequisite,
@@ -34,8 +35,10 @@ import {
   installAcpRuntime,
   listManagedAgents,
   listRelayAgents,
+  saveCustomHarness,
   updateManagedAgent,
 } from "@/shared/api/tauri";
+import type { HarnessDefinitionInput } from "@/shared/api/tauri";
 import {
   setManagedAgentAutoRestart,
   setManagedAgentStartOnAppLaunch,
@@ -233,6 +236,27 @@ export function useInstallAcpRuntimeMutation() {
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: acpRuntimesQueryKey });
       void queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
+    },
+  });
+}
+
+export function useSaveCustomHarnessMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (definition: HarnessDefinitionInput) =>
+      saveCustomHarness(definition),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: acpRuntimesQueryKey });
+    },
+  });
+}
+
+export function useDeleteCustomHarnessMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deleteCustomHarness(id),
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: acpRuntimesQueryKey });
     },
   });
 }

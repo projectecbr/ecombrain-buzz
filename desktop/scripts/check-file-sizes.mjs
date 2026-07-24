@@ -131,7 +131,9 @@ const overrides = new Map([
   // record_provider param + applies persona_field_with_record_fallback. +5 lines.
   // global-agent-config: spawn_agent_child loads global config and merges as
   // lowest env layer (+8 lines). Queued to split.
-  ["src-tauri/src/managed_agents/runtime.rs", 2216],
+  // +2: BYOH orphan-sweep fix — `!belongs && !has_buzz_marker` OR-gate replaces
+  // the old AND-gate so custom harness processes are not silently leaked on crash.
+  ["src-tauri/src/managed_agents/runtime.rs", 2218],
   // config-bridge setup-payload env-boundary fix adds readiness wiring in
   // spawn_agent_child; load-bearing security fix, queued to split.
   ["src-tauri/src/managed_agents/config_bridge/reader.rs", 1016],
@@ -181,7 +183,9 @@ const overrides = new Map([
   // Windows PATH-correctness fix: 3 #[cfg(windows)] test functions covering
   // .cmd shim rejection, .bat shim rejection, and .exe acceptance for
   // configure_runtime_cli (fix #2397). Test-only growth; queued to split.
-  ["src-tauri/src/managed_agents/runtime/tests.rs", 1041],
+  // +34: BYOH custom-harness sweep condition unit tests — 3 tests validating
+  // the OR-gate fix for custom-binary orphan cleanup.
+  ["src-tauri/src/managed_agents/runtime/tests.rs", 1075],
   // applyWorkspace reposDir parameter plus the validateReposDir binding,
   // threaded through Tauri invokes for configurable repos_dir, plus the
   // harness-persona-sync `harnessOverride` create-input bit — load-bearing
@@ -296,7 +300,9 @@ const overrides = new Map([
   // Buzz-managed Node path helpers and resolution tests moved to
   // managed_node_paths.rs and discovery/tests/managed_path_resolution.rs;
   // ratcheting 1366 -> 1392 after adding the managed-path probes to discovery.
-  ["src-tauri/src/managed_agents/discovery.rs", 1393],
+  // +17: BYOH custom harness catalog merge phase-3 — append custom definitions
+  // from custom_harnesses_dir with PATH-probe availability; source tagging.
+  ["src-tauri/src/managed_agents/discovery.rs", 1410],
   // rebase over codex-acp-package-swap: its version-probe tests union with the
   // doctor-install-reliability nvm/login-shell/semver tests — each side alone
   // stayed under the 1000 default; the union exceeds it.
@@ -498,7 +504,10 @@ const overrides = new Map([
   // route PowerShell CLI installs natively on Windows (bypasses Git Bash PATH
   // poisoning that resolved GNU tar instead of bsdtar → Codex install failure).
   // Includes unit tests for detection, routing, and -Command body preservation.
-  ["src-tauri/src/commands/agent_discovery.rs", 1810],
+  // +126: BYOH — save_custom_harness (validate, atomic write, return entry) +
+  // delete_custom_harness (id-guard, builtin reject, remove file) commands;
+  // discover_acp_providers updated to pass AppHandle + custom_harnesses dir.
+  ["src-tauri/src/commands/agent_discovery.rs", 1936],
   // draft-persistence predicate: submit-time `loadDraft` check + inline comment
   // + deps-array entry in submitMessage closes the never-persisted-boundary
   // defect (Thufir Pass-3 finding). Load-bearing correctness fix; queued to

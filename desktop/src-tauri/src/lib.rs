@@ -704,6 +704,8 @@ pub fn run() {
             discover_acp_providers,
             discover_git_bash_prerequisite,
             install_acp_runtime,
+            save_custom_harness,
+            delete_custom_harness,
             connect_acp_runtime,
             discover_managed_agent_prereqs,
             sign_event,
