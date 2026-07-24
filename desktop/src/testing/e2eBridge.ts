@@ -6975,6 +6975,7 @@ async function handleDiscoverAcpRuntimes(
       underlying_cli_path: null,
       node_required: false,
       auth_status: { status: "not_applicable" },
+      source: "builtin",
       login_hint: undefined,
     },
     {
@@ -6993,6 +6994,7 @@ async function handleDiscoverAcpRuntimes(
       underlying_cli_path: "/usr/local/bin/claude",
       node_required: false,
       auth_status: { status: "unknown" },
+      source: "builtin",
       login_hint: undefined,
     },
     {
@@ -7011,6 +7013,7 @@ async function handleDiscoverAcpRuntimes(
       underlying_cli_path: null,
       node_required: false,
       auth_status: { status: "unknown" },
+      source: "builtin",
       login_hint: undefined,
     },
     {
@@ -7028,6 +7031,7 @@ async function handleDiscoverAcpRuntimes(
       underlying_cli_path: null,
       node_required: false,
       auth_status: { status: "not_applicable" },
+      source: "builtin",
       login_hint: undefined,
     },
   ];

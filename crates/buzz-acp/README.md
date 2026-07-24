@@ -252,6 +252,51 @@ Each channel has at most one prompt in flight. Multiple channels can be processe
 
 > **Note:** On startup, the harness replays all unprocessed @mentions since the last run. Expect a burst of activity if there are stale events in the channel.
 
+## Bring Your Own Harness (BYOH)
+
+Buzz Desktop supports registering any ACP-speaking agent tool as a selectable runtime without a PR.
+
+### How it works
+
+**Tier-1 — compiled-in runtimes** (Goose, Claude Code, Codex, Buzz Agent): have auto-installers, auth probes, and first-class onboarding. Their IDs (`goose`, `claude`, `codex`, `buzz-agent`) are reserved and cannot be overridden.
+
+**Tier-2 — preset catalog** (Cursor, Oh My Pi, Grok Build, OpenCode, Kimi Code, Amp): bundled data entries in the Settings → Agents harness gallery, with logos and verified command/args. Available on their own tab if already installed; otherwise surfaced as "Add" cards with docs links.
+
+**Tier-3 — user custom harnesses**: JSON files in `<app-data>/custom_harnesses/` that the user can create from the Settings UI or drop in directly. Each file describes one harness — no install scripts.
+
+### Custom harness JSON schema
+
+```json
+{
+  "id": "my-agent",
+  "label": "My Agent",
+  "command": "my-agent-bin",
+  "args": ["acp"],
+  "installInstructionsUrl": "https://example.com/docs",
+  "installHint": "Download from example.com"
+}
+```
+
+Fields:
+- `id` — `[a-z0-9_][a-z0-9_-]*` (used as the runtime picker value and file name)
+- `label` — human-readable name shown in the UI
+- `command` — the executable name or absolute path (must be non-empty)
+- `args` — optional default CLI arguments
+- `installInstructionsUrl` / `installHint` — shown when the binary is not on PATH
+
+Invalid files (bad JSON, unknown id, empty command) are skipped with a warning and do not break discovery for other entries.
+
+### Adding a preset (contributor guide)
+
+To add a new runtime to the tier-2 gallery:
+
+1. **Verify the ACP entrypoint** from the vendor's own documentation — do not rely on a PR description alone.
+2. **Add a `HarnessPreset` entry** in `desktop/src/features/settings/ui/HarnessManagementCard.tsx` inside `HARNESS_PRESETS`.
+3. **Add a logo** (64×64 PNG or optimised SVG) to `desktop/public/harness-logos/<id>.png` and reference it as `logoPath`.
+4. That's it — no Rust changes required for tier-2.
+
+The built-in `BUILTIN_IDS` list (`goose`, `claude`, `codex`, `buzz-agent`) is the only reserved namespace; every other id is open.
+
 ## Using Any ACP Agent
 
 The harness works with any agent that implements the [ACP spec](https://agentclientprotocol.com/) over stdio. The requirements are:
