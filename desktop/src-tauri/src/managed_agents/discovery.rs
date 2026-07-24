@@ -281,6 +281,7 @@ pub fn default_agent_command() -> String {
 ///   1. explicit override (non-empty) — a deliberate per-instance pin;
 ///   2. the record's own `runtime` id mapped to its primary command —
 ///      records materialize their runtime at create/migration time;
+///      checks both static builtins AND the loaded preset/custom registry;
 ///   3. legacy fallback: the linked persona's `runtime` (records created
 ///      before the unified model carry `persona_id` but no `runtime`);
 ///   4. `default_agent_command()`.
@@ -297,13 +298,17 @@ pub fn record_agent_command(
         return pin.to_string();
     }
 
-    if let Some(command) = record
-        .runtime
-        .as_deref()
-        .and_then(known_acp_runtime_exact)
-        .and_then(|r| r.commands.first().copied())
-    {
-        return command.to_string();
+    if let Some(id) = record.runtime.as_deref() {
+        // Check static builtins first.
+        if let Some(command) = known_acp_runtime_exact(id).and_then(|r| r.commands.first().copied())
+        {
+            return command.to_string();
+        }
+        // Fall back to loaded registry for preset/custom harnesses.
+        if let Some(def) = crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(id)
+        {
+            return def.command.clone();
+        }
     }
 
     effective_agent_command(record.persona_id.as_deref(), personas, None)
@@ -315,7 +320,8 @@ pub fn record_agent_command(
 ///
 /// Resolution order:
 ///   1. explicit override (non-empty) — a deliberate per-instance pin;
-///   2. the linked persona's `runtime` id mapped to its primary command;
+///   2. the linked persona's `runtime` id mapped to its primary command
+///      (checks builtins then loaded preset/custom registry);
 ///   3. `default_agent_command()` — no persona/runtime, or persona deleted.
 pub fn effective_agent_command(
     persona_id: Option<&str>,
@@ -329,13 +335,24 @@ pub fn effective_agent_command(
         return pin.to_string();
     }
 
-    persona_id
+    let runtime_id = persona_id
         .and_then(|pid| personas.iter().find(|p| p.id == pid))
-        .and_then(|persona| persona.runtime.as_deref())
-        .and_then(known_acp_runtime_exact)
-        .and_then(|r| r.commands.first().copied())
-        .map(str::to_string)
-        .unwrap_or_else(default_agent_command)
+        .and_then(|persona| persona.runtime.as_deref());
+
+    if let Some(id) = runtime_id {
+        // Check static builtins first.
+        if let Some(command) = known_acp_runtime_exact(id).and_then(|r| r.commands.first().copied())
+        {
+            return command.to_string();
+        }
+        // Check loaded preset/custom registry.
+        if let Some(def) = crate::managed_agents::custom_harnesses::lookup_loaded_harness_by_id(id)
+        {
+            return def.command.clone();
+        }
+    }
+
+    default_agent_command()
 }
 
 mod overrides;
@@ -1159,18 +1176,90 @@ struct PartialEntry {
     entry: AcpRuntimeCatalogEntry,
 }
 
+// ── Tier-2 preset harnesses ────────────────────────────────────────────────
+//
+// Static data for well-known ACP harnesses that have bundled logos and
+// verified command/args. PATH-probed at discovery time (Detected badge);
+// not editable or deletable by users. Logos are bundled assets referenced
+// by id in the frontend `RUNTIME_LOGOS` map.
+
+struct PresetHarness {
+    id: &'static str,
+    label: &'static str,
+    command: &'static str,
+    args: &'static [&'static str],
+    install_instructions_url: &'static str,
+    install_hint: &'static str,
+}
+
+const PRESET_HARNESSES: &[PresetHarness] = &[
+    PresetHarness {
+        id: "cursor",
+        label: "Cursor",
+        command: "cursor-agent",
+        args: &["acp"],
+        install_instructions_url: "https://cursor.com/downloads",
+        install_hint: "Install Cursor from cursor.com/downloads.",
+    },
+    PresetHarness {
+        id: "omp",
+        label: "Oh My Pi",
+        command: "omp",
+        args: &["acp"],
+        install_instructions_url: "https://github.com/can1357/oh-my-pi",
+        install_hint: "Install Oh My Pi from github.com/can1357/oh-my-pi.",
+    },
+    PresetHarness {
+        id: "grok",
+        label: "Grok Build",
+        command: "grok",
+        args: &["agent", "--always-approve", "stdio"],
+        install_instructions_url: "https://build.x.ai/docs",
+        install_hint: "Install Grok Build from build.x.ai.",
+    },
+    PresetHarness {
+        id: "opencode",
+        label: "OpenCode",
+        command: "opencode",
+        args: &["acp"],
+        install_instructions_url: "https://opencode.ai/docs",
+        install_hint: "Install OpenCode from opencode.ai/docs.",
+    },
+    PresetHarness {
+        id: "kimi",
+        label: "Kimi Code",
+        command: "kimi",
+        args: &["acp"],
+        install_instructions_url: "https://kimi.ai/download",
+        install_hint: "Install Kimi Code from kimi.ai/download.",
+    },
+    PresetHarness {
+        id: "amp",
+        label: "Amp",
+        command: "amp-acp",
+        args: &[],
+        install_instructions_url: "https://github.com/tao12345666333/amp-acp",
+        install_hint: "Install the amp-acp npm adapter: npm install -g amp-acp.",
+    },
+];
+
 /// Discover all ACP runtimes, optionally merging user-defined custom harnesses
 /// from `custom_harnesses_dir`.
 ///
 /// This is the primary entry point used by the Tauri command layer. It:
 /// 1. Builds entries for all compiled-in (`Builtin`) runtimes.
 /// 2. Runs auth probes in parallel.
-/// 3. If `custom_harnesses_dir` is `Some`, loads `*.json` files from that
+/// 3. Inserts static `Preset` entries (PATH-probed, `source: Preset`).
+/// 4. If `custom_harnesses_dir` is `Some`, loads `*.json` files from that
 ///    directory and appends `Custom` entries — no auth probe, command resolved
 ///    via PATH, availability is `Available` or `NotInstalled`.
 ///
 /// The custom dir is re-scanned on every call (goose `refresh_custom_providers`
 /// pattern) — no caching, no restart needed to pick up new files.
+///
+/// After building the catalog, updates the loaded-harness registry so spawn
+/// and readiness paths can resolve preset/custom harness commands without
+/// re-running discovery.
 pub fn discover_acp_runtimes_from(
     custom_harnesses_dir: Option<&Path>,
 ) -> Vec<AcpRuntimeCatalogEntry> {
@@ -1330,22 +1419,84 @@ pub fn discover_acp_runtimes_from(
 
     let mut entries: Vec<AcpRuntimeCatalogEntry> = partials.into_iter().map(|p| p.entry).collect();
 
+    // Track all ids seen so far (builtins) to prevent preset/custom collisions.
+    let mut seen_ids: std::collections::HashSet<String> =
+        entries.iter().map(|e| e.id.clone()).collect();
+
+    // Loaded (non-builtin) definitions collected for the registry.
+    let mut loaded_defs: Vec<crate::managed_agents::custom_harnesses::HarnessDefinition> =
+        Vec::new();
+
+    // Phase 2.5: insert static preset entries (PATH-probed, not editable/deletable).
+    for def in PRESET_HARNESSES {
+        if seen_ids.contains(def.id) {
+            // Builtin or earlier preset shadowed this id — skip silently.
+            continue;
+        }
+        seen_ids.insert(def.id.to_string());
+
+        let (availability, command, binary_path) = match find_command(def.command) {
+            Some(path) => (
+                AcpAvailabilityStatus::Available,
+                Some(def.command.to_string()),
+                Some(path.display().to_string()),
+            ),
+            None => (AcpAvailabilityStatus::NotInstalled, None, None),
+        };
+
+        let default_args = normalize_agent_args(
+            def.command,
+            def.args.iter().map(|s| s.to_string()).collect(),
+        );
+
+        entries.push(AcpRuntimeCatalogEntry {
+            id: def.id.to_string(),
+            label: def.label.to_string(),
+            // No remote URL — all preset icons are bundled assets.
+            avatar_url: String::new(),
+            availability,
+            command,
+            binary_path,
+            default_args,
+            mcp_command: None,
+            model_env_var: None,
+            provider_env_var: None,
+            thinking_env_var: None,
+            install_hint: def.install_hint.to_string(),
+            install_instructions_url: def.install_instructions_url.to_string(),
+            can_auto_install: false,
+            underlying_cli_path: None,
+            node_required: false,
+            auth_status: AuthStatus::NotApplicable,
+            login_hint: None,
+            source: HarnessSource::Preset,
+        });
+
+        // Register for spawn-time resolution.
+        loaded_defs.push(crate::managed_agents::custom_harnesses::HarnessDefinition {
+            id: def.id.to_string(),
+            label: def.label.to_string(),
+            command: def.command.to_string(),
+            args: def.args.iter().map(|s| s.to_string()).collect(),
+            env: Default::default(),
+            install_instructions_url: def.install_instructions_url.to_string(),
+            install_hint: def.install_hint.to_string(),
+        });
+    }
+
     // Phase 3: load and append custom harness definitions.
     if let Some(dir) = custom_harnesses_dir {
-        let builtin_ids: std::collections::HashSet<String> =
-            entries.iter().map(|e| e.id.clone()).collect();
-
         for def in crate::managed_agents::custom_harnesses::load_custom_harnesses(dir) {
-            // Collision check: a custom file must not shadow a built-in id.
+            // Collision check: a custom file must not shadow a built-in or preset id.
             if let Err(reason) =
                 crate::managed_agents::custom_harnesses::check_id_collision(&def.id)
             {
-                eprintln!("custom_harnesses: skipping {}: {reason}", def.id);
+                tracing::warn!("custom_harnesses: skipping {}: {reason}", def.id);
                 continue;
             }
-            // Also reject duplicates within the custom set itself.
-            if builtin_ids.contains(&def.id) {
-                eprintln!("custom_harnesses: skipping duplicate id {:?}", def.id);
+            // Reject duplicates within the custom set itself or against presets.
+            if !seen_ids.insert(def.id.clone()) {
+                tracing::warn!("custom_harnesses: skipping duplicate id {:?}", def.id);
                 continue;
             }
 
@@ -1362,9 +1513,11 @@ pub fn discover_acp_runtimes_from(
             let default_args = normalize_agent_args(&def.command, def.args.clone());
 
             entries.push(AcpRuntimeCatalogEntry {
-                id: def.id,
-                label: def.label,
-                avatar_url: def.avatar_url,
+                id: def.id.clone(),
+                label: def.label.clone(),
+                // F1 security fix: never copy user-supplied avatar URL into the catalog.
+                // All icons are bundled assets; customs fall back to TerminalSquare in the UI.
+                avatar_url: String::new(),
                 availability,
                 command,
                 binary_path,
@@ -1375,8 +1528,8 @@ pub fn discover_acp_runtimes_from(
                 model_env_var: None,
                 provider_env_var: None,
                 thinking_env_var: None,
-                install_hint: def.install_hint,
-                install_instructions_url: def.install_instructions_url,
+                install_hint: def.install_hint.clone(),
+                install_instructions_url: def.install_instructions_url.clone(),
                 // Security line: custom definitions carry no install scripts.
                 can_auto_install: false,
                 underlying_cli_path: None,
@@ -1386,18 +1539,16 @@ pub fn discover_acp_runtimes_from(
                 login_hint: None,
                 source: HarnessSource::Custom,
             });
+
+            loaded_defs.push(def);
         }
     }
 
-    entries
-}
+    // Populate the loaded registry so spawn, readiness, and summary paths can
+    // resolve custom/preset harness commands without re-running discovery.
+    crate::managed_agents::custom_harnesses::update_loaded_harness_registry(loaded_defs);
 
-/// Discover all compiled-in ACP runtimes without loading custom harnesses.
-///
-/// Kept for call sites that don't have access to the app-data directory (tests,
-/// internal helpers). Production code should call `discover_acp_runtimes_from`.
-pub fn discover_acp_runtimes() -> Vec<AcpRuntimeCatalogEntry> {
-    discover_acp_runtimes_from(None)
+    entries
 }
 
 pub fn managed_agent_avatar_url(command: &str) -> Option<String> {

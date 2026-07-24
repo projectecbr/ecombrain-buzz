@@ -83,11 +83,24 @@ pub async fn discover_acp_providers(
 /// and label) before touching the filesystem. Returns the merged catalog entry
 /// so the UI can update the provider list without triggering a full re-discover.
 ///
-/// The file is written atomically via a temp-file rename so a partial write
-/// never produces a corrupted JSON file that would permanently suppress the entry.
+/// Write a user-defined harness definition to `<app-data>/custom_harnesses/<id>.json`.
+///
+/// Validates the definition (id regex, builtin-id collision, non-empty command
+/// and label) before touching the filesystem. Returns the merged catalog entry
+/// so the UI can update the provider list without triggering a full re-discover.
+///
+/// `original_id` handles the rename case: when the user edits an existing
+/// harness and changes its id, pass the old id here so the old file is removed
+/// atomically as part of the write. If the id is unchanged or this is a new
+/// harness, omit `original_id` (or pass `None`).
+///
+/// The file is written using `atomic-write-file` (unique temp file + commit)
+/// so concurrent saves do not race on a fixed temp path, and a partial write
+/// never produces a corrupted JSON file.
 #[tauri::command]
 pub async fn save_custom_harness(
     definition: crate::managed_agents::custom_harnesses::HarnessDefinition,
+    original_id: Option<String>,
     app: tauri::AppHandle,
 ) -> Result<AcpRuntimeCatalogEntry, String> {
     use crate::managed_agents::{
@@ -109,16 +122,32 @@ pub async fn save_custom_harness(
 
     let target_path = custom_dir.join(format!("{}.json", definition.id));
 
-    // Serialize and write atomically (temp file + rename).
+    // Serialize and write atomically using atomic-write-file (unique temp per call).
     let json = serde_json::to_string_pretty(&definition)
         .map_err(|e| format!("failed to serialize harness definition: {e}"))?;
-    let tmp_path = custom_dir.join(format!(".{}.json.tmp", definition.id));
-    std::fs::write(&tmp_path, &json)
-        .map_err(|e| format!("failed to write harness definition: {e}"))?;
-    std::fs::rename(&tmp_path, &target_path).map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        format!("failed to finalize harness definition: {e}")
-    })?;
+
+    {
+        use atomic_write_file::AtomicWriteFile;
+        let mut file = AtomicWriteFile::open(&target_path)
+            .map_err(|e| format!("failed to open {}: {e}", target_path.display()))?;
+        std::io::Write::write_all(&mut file, json.as_bytes())
+            .map_err(|e| format!("failed to write harness definition: {e}"))?;
+        file.commit()
+            .map_err(|e| format!("failed to finalize harness definition: {e}"))?;
+    }
+
+    // If the id changed, remove the old file after the new one is safely committed.
+    if let Some(old_id) = original_id.filter(|oid| !oid.is_empty() && oid != &definition.id) {
+        custom_harnesses::check_id_collision(&old_id)
+            .map_err(|_| format!("original_id {old_id:?} is a built-in and cannot be deleted"))?;
+        if !custom_harnesses::is_valid_harness_id_pub(&old_id) {
+            return Err(format!("invalid original_id {old_id:?}"));
+        }
+        let old_path = custom_dir.join(format!("{old_id}.json"));
+        match std::fs::remove_file(&old_path) {
+            Ok(()) | Err(_) => {} // Best-effort; new file already committed.
+        }
+    }
 
     // Resolve availability for the returned catalog entry.
     let (availability, command_opt, binary_path) =
@@ -137,7 +166,8 @@ pub async fn save_custom_harness(
     Ok(AcpRuntimeCatalogEntry {
         id: definition.id,
         label: definition.label,
-        avatar_url: definition.avatar_url,
+        // Security: no user-supplied avatar URL in catalog entries.
+        avatar_url: String::new(),
         availability,
         command: command_opt,
         binary_path,

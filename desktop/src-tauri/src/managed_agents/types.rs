@@ -572,6 +572,8 @@ pub enum AuthStatus {
 pub enum HarnessSource {
     /// Compiled into the app — one of the four first-class runtimes.
     Builtin,
+    /// Static preset entry with bundled logo, PATH-probed, not editable/deletable.
+    Preset,
     /// Loaded at runtime from the user's `custom_harnesses/` directory.
     Custom,
 }

@@ -8,7 +8,12 @@
 //! **Security constraint (Will-ratified):** custom definitions carry NO install
 //! shell commands. `can_auto_install` is always `false` for custom entries.
 //! Only tier-1 compiled-in runtimes retain install-script power.
+//!
+//! **Avatar URL security:** custom/preset catalog entries MUST NOT carry
+//! user-supplied avatar URLs. `HarnessDefinition` intentionally omits
+//! `avatar_url` — all icons are bundled assets keyed via `RUNTIME_LOGOS`.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
@@ -37,8 +42,9 @@ pub(crate) fn is_valid_harness_id_pub(id: &str) -> bool {
 /// User-supplied harness definition deserialized from a JSON file.
 ///
 /// Only the fields a custom harness definition is permitted to carry are
-/// included here — install commands are intentionally absent (security line).
-#[derive(Debug, Deserialize, Serialize)]
+/// included here — install commands and avatar URLs are intentionally absent
+/// (security line: no remote icon URLs from user-editable config).
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct HarnessDefinition {
     /// Unique identifier, must match `[a-z0-9_][a-z0-9_-]*`.
@@ -47,12 +53,14 @@ pub(crate) struct HarnessDefinition {
     pub label: String,
     /// Primary executable name or absolute path. May not be empty.
     pub command: String,
-    /// Optional default CLI arguments passed to the command.
+    /// Default CLI arguments passed to the command (array, not split-string).
     #[serde(default)]
     pub args: Vec<String>,
-    /// URL to an avatar image. Empty string → no avatar.
+    /// Environment variables injected at spawn time. Definition env is applied
+    /// first and LOSES on conflict with Buzz-injected vars — `BUZZ_MANAGED_AGENT`
+    /// is always authoritative and cannot be overridden here.
     #[serde(default)]
-    pub avatar_url: String,
+    pub env: BTreeMap<String, String>,
     /// Link to external docs for manual install/setup instructions.
     #[serde(default)]
     pub install_instructions_url: String,
@@ -75,7 +83,7 @@ pub(crate) fn load_custom_harnesses(dir: &Path) -> Vec<HarnessDefinition> {
         Ok(e) => e,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return vec![],
         Err(err) => {
-            eprintln!(
+            tracing::warn!(
                 "custom_harnesses: cannot read directory {}: {err}",
                 dir.display()
             );
@@ -94,7 +102,7 @@ pub(crate) fn load_custom_harnesses(dir: &Path) -> Vec<HarnessDefinition> {
         let contents = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(err) => {
-                eprintln!("custom_harnesses: failed to read {}: {err}", path.display());
+                tracing::warn!("custom_harnesses: failed to read {}: {err}", path.display());
                 continue;
             }
         };
@@ -102,7 +110,7 @@ pub(crate) fn load_custom_harnesses(dir: &Path) -> Vec<HarnessDefinition> {
         let def: HarnessDefinition = match serde_json::from_str(&contents) {
             Ok(d) => d,
             Err(err) => {
-                eprintln!(
+                tracing::warn!(
                     "custom_harnesses: invalid JSON in {}: {err}",
                     path.display()
                 );
@@ -111,7 +119,7 @@ pub(crate) fn load_custom_harnesses(dir: &Path) -> Vec<HarnessDefinition> {
         };
 
         if let Err(reason) = validate_harness_definition(&def) {
-            eprintln!("custom_harnesses: skipping {} — {reason}", path.display());
+            tracing::warn!("custom_harnesses: skipping {} — {reason}", path.display());
             continue;
         }
 
@@ -164,6 +172,47 @@ pub(crate) fn check_id_collision(id: &str) -> Result<(), String> {
         ));
     }
     Ok(())
+}
+
+// ── Loaded harness registry (F2 — spawn resolution for custom/preset) ────────
+//
+// `known_acp_runtime` / `known_acp_runtime_exact` only search the static
+// `KNOWN_ACP_RUNTIMES` table, so custom and preset harnesses were invisible at
+// spawn time, causing silent fallback to buzz-agent.
+//
+// The fix: `discover_acp_runtimes_from` populates this registry with every
+// non-builtin definition after each discovery run. Spawn, readiness, and
+// summary paths query `lookup_loaded_harness` to get the live definition for a
+// given id or command. If a harness id that an agent references is gone from the
+// registry, the caller gets a typed error — never a silent buzz-agent fallback.
+
+use std::sync::{Arc, RwLock};
+
+/// Thread-safe registry of non-builtin (preset + custom) harness definitions,
+/// populated on every `discover_acp_runtimes_from` call and queried at spawn time.
+fn loaded_harness_registry() -> &'static RwLock<Vec<Arc<HarnessDefinition>>> {
+    use std::sync::OnceLock;
+    static REGISTRY: OnceLock<RwLock<Vec<Arc<HarnessDefinition>>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| RwLock::new(Vec::new()))
+}
+
+/// Replace the registry contents with `definitions`. Called once per
+/// `discover_acp_runtimes_from` run so spawn queries see the freshest data.
+pub(crate) fn update_loaded_harness_registry(definitions: Vec<HarnessDefinition>) {
+    let arcs: Vec<Arc<HarnessDefinition>> = definitions.into_iter().map(Arc::new).collect();
+    if let Ok(mut guard) = loaded_harness_registry().write() {
+        *guard = arcs;
+    }
+}
+
+/// Look up a loaded (non-builtin) harness by **id**. Returns `None` when the id
+/// is unknown — callers that need a typed error should use
+/// `require_loaded_harness`.
+pub(crate) fn lookup_loaded_harness_by_id(id: &str) -> Option<Arc<HarnessDefinition>> {
+    loaded_harness_registry()
+        .read()
+        .ok()
+        .and_then(|g| g.iter().find(|d| d.id == id).cloned())
 }
 
 #[cfg(test)]
@@ -332,12 +381,14 @@ mod tests {
     #[test]
     fn round_trip_save_then_load_then_delete() {
         let dir = tempfile::tempdir().unwrap();
+        let mut env_map = BTreeMap::new();
+        env_map.insert("MY_KEY".to_string(), "my_value".to_string());
         let def = HarnessDefinition {
             id: "my-rt".to_string(),
             label: "My Runtime".to_string(),
             command: "my-rt-bin".to_string(),
             args: vec!["--flag".to_string()],
-            avatar_url: String::new(),
+            env: env_map,
             install_instructions_url: "https://example.com".to_string(),
             install_hint: "Install from example.com".to_string(),
         };
@@ -353,6 +404,10 @@ mod tests {
         assert_eq!(loaded[0].id, "my-rt");
         assert_eq!(loaded[0].command, "my-rt-bin");
         assert_eq!(loaded[0].args, vec!["--flag"]);
+        assert_eq!(
+            loaded[0].env.get("MY_KEY").map(String::as_str),
+            Some("my_value")
+        );
 
         // Delete the file (simulating delete_custom_harness).
         fs::remove_file(&target).unwrap();

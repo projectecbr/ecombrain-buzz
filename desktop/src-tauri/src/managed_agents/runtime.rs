@@ -578,6 +578,37 @@ const _: () = assert!(std::mem::size_of::<BSDInfo>() == 136);
 #[cfg(target_os = "macos")]
 pub(super) const PROC_PIDTBSDINFO: libc::c_int = 3;
 
+// ── Shared sweep ownership predicate (F4 fix) ─────────────────────────────
+//
+// `process_belongs_to_us` is a cheap name-match against KNOWN_AGENT_BINARIES.
+// Custom harnesses have arbitrary binary names so they never match; previously
+// the macOS gates required EITHER name OR marker (OR-gate + final marker check,
+// which is equivalent to just checking the marker), while the Linux gates
+// required BOTH (AND-gate) — which silently skipped all custom harnesses.
+//
+// The correct rule is: a process is Buzz-owned iff `process_has_buzz_marker`
+// is true. The name check is only a fast-path skip for processes that are
+// definitely not ours. This shared predicate encodes that invariant once.
+
+/// Returns `true` when a process should be included in the orphan sweep.
+///
+/// A process is definitively Buzz-owned when it carries the `BUZZ_MANAGED_AGENT`
+/// env marker. The name check (`belongs_to_us`) is a cheap fast-path filter:
+/// if the process is definitely foreign (not a known binary AND no marker) we
+/// can skip the more expensive marker scan. When the name matches a known binary
+/// we still require the marker — a stray process with a colliding name is not ours.
+///
+/// This predicate is tested directly in the unit tests below.
+#[cfg(unix)]
+pub(crate) fn buzz_sweep_owns_process(belongs_to_us: bool, has_buzz_marker: bool) -> bool {
+    // Fast skip: process is definitely foreign (not a known binary, no marker).
+    if !belongs_to_us && !has_buzz_marker {
+        return false;
+    }
+    // Authoritative ownership gate: marker must be present.
+    has_buzz_marker
+}
+
 /// Enumerate all processes on the system owned by the current user and kill any
 /// agent binary stamped with *this* instance's `BUZZ_MANAGED_AGENT` marker
 /// (`instance_id`) that isn't in `skip_pids`. This catches orphans that escaped
@@ -621,13 +652,13 @@ pub(crate) fn sweep_system_agent_processes(instance_id: &str, skip_pids: &[u32])
             continue;
         }
         // Name-check is a cheap fast-path for known binaries. Custom harnesses
-        // don't match KNOWN_AGENT_BINARIES by name — fall through to the
-        // BUZZ_MANAGED_AGENT env marker check which is the authoritative proof
-        // of Buzz-managed ownership.
-        if !process_belongs_to_us(upid) && !process_has_buzz_marker(upid, instance_id) {
-            continue;
-        }
-        if !process_has_buzz_marker(upid, instance_id) {
+        // don't match KNOWN_AGENT_BINARIES by name; the BUZZ_MANAGED_AGENT env
+        // marker is the authoritative ownership proof. Use the shared predicate
+        // that encodes both: fast-skip foreign + authoritative marker gate.
+        if !buzz_sweep_owns_process(
+            process_belongs_to_us(upid),
+            process_has_buzz_marker(upid, instance_id),
+        ) {
             continue;
         }
         // Live descendants of a tracked harness are exempt — see sweep::is_live_descendant_*.
@@ -686,7 +717,12 @@ pub(crate) fn sweep_system_agent_processes(instance_id: &str, skip_pids: &[u32])
         if meta.uid() != my_uid {
             continue;
         }
-        if !process_belongs_to_us(upid) || !process_has_buzz_marker(upid, instance_id) {
+        // Same ownership predicate as macOS: fast-skip foreign, authoritative
+        // marker gate. Fixes custom-harness orphan cleanup on Linux.
+        if !buzz_sweep_owns_process(
+            process_belongs_to_us(upid),
+            process_has_buzz_marker(upid, instance_id),
+        ) {
             continue;
         }
         // Live descendants of a tracked harness are exempt — see sweep::is_live_descendant_*.
@@ -789,10 +825,10 @@ pub(crate) fn collect_same_instance_orphans(
         }
         // Custom harnesses don't match KNOWN_AGENT_BINARIES by name; the
         // BUZZ_MANAGED_AGENT env marker is the authoritative ownership proof.
-        if !process_belongs_to_us(upid) && !process_has_buzz_marker(upid, instance_id) {
-            continue;
-        }
-        if !process_has_buzz_marker(upid, instance_id) {
+        if !buzz_sweep_owns_process(
+            process_belongs_to_us(upid),
+            process_has_buzz_marker(upid, instance_id),
+        ) {
             continue;
         }
         // Live descendants of a tracked harness are exempt — see sweep::is_live_descendant_*.
@@ -838,7 +874,12 @@ pub(crate) fn collect_same_instance_orphans(
         if meta.uid() != my_uid {
             continue;
         }
-        if !process_belongs_to_us(upid) || !process_has_buzz_marker(upid, instance_id) {
+        // Same ownership predicate as macOS: fast-skip foreign, authoritative
+        // marker gate. Fixes custom-harness orphan cleanup on Linux.
+        if !buzz_sweep_owns_process(
+            process_belongs_to_us(upid),
+            process_has_buzz_marker(upid, instance_id),
+        ) {
             continue;
         }
         // Live descendants of a tracked harness are exempt — see sweep::is_live_descendant_*.

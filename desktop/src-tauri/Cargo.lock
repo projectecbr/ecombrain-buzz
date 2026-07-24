@@ -1079,6 +1079,7 @@ dependencies = [
  "tokio-tungstenite 0.29.0",
  "tokio-util",
  "toml 0.8.2",
+ "tracing",
  "url",
  "user-idle",
  "uuid",
