@@ -17,12 +17,12 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayContainer"] }],
   "vars": {
-    "RELAY_OPERATOR_API_ORIGIN": "https://ecombrain-teams-spike.coveandlinen.workers.dev",
-    "RELAY_URL": "wss://ecombrain-teams-spike.coveandlinen.workers.dev",
-    "BUZZ_MEDIA_BASE_URL": "https://ecombrain-teams-spike.coveandlinen.workers.dev/media",
+    "RELAY_OPERATOR_API_ORIGIN": "https://ecombrain-teams-spike.yannis-83d.workers.dev",
+    "RELAY_URL": "wss://ecombrain-teams-spike.yannis-83d.workers.dev",
+    "BUZZ_MEDIA_BASE_URL": "https://ecombrain-teams-spike.yannis-83d.workers.dev/media",
     "BUZZ_BIND_ADDR": "0.0.0.0:3000",
     "BUZZ_HUDDLE_AUDIO_AVAILABLE": "false",
-    "BUZZ_S3_ENDPOINT": "https://2b4b7eb999d294af4c0e419d4a84cf45.r2.cloudflarestorage.com",
+    "BUZZ_S3_ENDPOINT": "https://83d987dbf1a79a01091b35fbfad5ff4d.r2.cloudflarestorage.com",
     "BUZZ_S3_BUCKET": "ecombrain-teams-media-staging",
     "BUZZ_S3_REGION": "auto"
   }
