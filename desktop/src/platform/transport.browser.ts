@@ -31,6 +31,8 @@ export type WebSocketConstructor = new (url: string) => WebSocketLike;
 export type BrowserTransportOptions = {
   /** WebSocket implementation; defaults to globalThis.WebSocket. */
   WebSocketImpl?: WebSocketConstructor;
+  /** Maximum time to wait for the socket to open. */
+  connectTimeoutMs?: number;
 };
 
 type MessageEventLike = { data: unknown };
@@ -61,17 +63,40 @@ export function createBrowserTransport(
         const id = nextId++;
         const handle: TransportHandle = { id };
         const socket = new WebSocketImpl(url);
-        let settled = false;
+        let opened = false;
+        let finished = false;
+        const timeout = setTimeout(() => {
+          if (finished) return;
+          finished = true;
+          try {
+            socket.close(1000, "connection timeout");
+          } catch {
+            // Ignore a socket that failed while being closed.
+          }
+          reject(new Error(`WebSocket connection to ${url} timed out.`));
+        }, options.connectTimeoutMs ?? 10_000);
 
         socket.addEventListener("open", () => {
-          settled = true;
+          if (finished) {
+            try {
+              socket.close(1000, "connection already failed");
+            } catch {
+              // Ignore a late-open socket that is already closing.
+            }
+            return;
+          }
+          opened = true;
+          finished = true;
+          clearTimeout(timeout);
           sockets.set(id, socket);
           resolve(handle);
         });
 
         socket.addEventListener("error", () => {
-          if (!settled) {
-            settled = true;
+          if (!opened) {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timeout);
             reject(new Error(`WebSocket connection to ${url} failed.`));
             return;
           }
@@ -88,8 +113,10 @@ export function createBrowserTransport(
 
         socket.addEventListener("close", (event: CloseEventLike) => {
           sockets.delete(id);
-          if (!settled) {
-            settled = true;
+          if (!opened) {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timeout);
             reject(new Error(`WebSocket connection to ${url} was closed.`));
             return;
           }

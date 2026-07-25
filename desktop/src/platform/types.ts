@@ -124,8 +124,14 @@ export interface PlatformMedia {
    * picked file, matching `pick_and_upload_media` (`BlobDescriptor[]`).
    */
   pickAndUpload(): Promise<UploadResult[]>;
+  /** Upload bytes already held by the renderer (paste and drag/drop). */
+  uploadBytes(
+    data: Uint8Array,
+    filename?: string,
+    progressId?: string,
+  ): Promise<UploadResult>;
   /** Save a remote file locally (browser: `<a download>`). */
-  download(url: string, filename: string): void;
+  download(url: string, filename?: string): void;
   /** Copy an image to the system clipboard. */
   copyImage(url: string): Promise<void>;
 }

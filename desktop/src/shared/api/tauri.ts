@@ -1,4 +1,4 @@
-import { getCommands } from "@/platform";
+import { getCommands, getMedia, getPlatform } from "@/platform";
 import type {
   AddChannelMembersInput,
   AddChannelMembersResult,
@@ -281,6 +281,31 @@ export function invokeTauri<T>(
   command: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
+  if (getPlatform() === "web") {
+    const media = getMedia();
+    if (command === "pick_and_upload_media") {
+      return media.pickAndUpload() as Promise<T>;
+    }
+    if (command === "upload_media_bytes") {
+      return media.uploadBytes(
+        Uint8Array.from(args?.data as number[]),
+        args?.filename as string | undefined,
+        args?.progressId as string | undefined,
+      ) as Promise<T>;
+    }
+    if (command === "download_file" || command === "download_image") {
+      media.download(args?.url as string, args?.filename as string | undefined);
+      return Promise.resolve(undefined as T);
+    }
+    if (command === "copy_image_to_clipboard") {
+      return media.copyImage(args?.url as string) as Promise<T>;
+    }
+    if (command === "upload_media") {
+      return Promise.reject(
+        new Error("filesystem-path upload is unavailable in the browser"),
+      );
+    }
+  }
   // Adapter C seam (Phase 2): routes through the platform commands adapter —
   // commands.tauri is a passthrough to @tauri-apps/api invoke with the same
   // toTauriError conversion that used to live here (zero desktop behavior
