@@ -52,6 +52,13 @@ Relay image `ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0` run locally with `s
    - A third account (Dgac187@gmail.com's) is visible to the business login; NOT used (governance).
    - The personal account's workers.dev subdomain `coveandlinen` will be replaced by the business
      account's subdomain; RELAY_OPERATOR_API_ORIGIN + Doppler values update at Task 5.
+9. **A9 video: relay does NOT transcode** (verified 2026-07-25 at the pin): upload path accepts
+   `video/mp4` ONLY (`crates/buzz-relay/src/api/media.rs:356`), stores with a minimal sidecar
+   (duration only) — "no thumbnail — desktop handles that" (`crates/buzz-media/src/upload.rs:287,469`).
+   The spec's "relay-side transcoding replaces desktop transcode" is FALSE at relay-v0.2.0:
+   thumbnails/transcodes were desktop-native (`commands/media_transcode.rs`, not ported).
+   Buzz-Web consequence: mp4-only uploads (clean rejection otherwise) + client-side poster
+   capture (canvas) or no video thumbnails in v1 — decision recorded in Phase 2 Task 4b.
 
 ## Local baseline (Task 2) — PASS
 - Toolchain: Hermit → Rust 1.95.0, Node 24.14.0, just 1.46.0.
