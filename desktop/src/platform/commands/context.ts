@@ -108,7 +108,7 @@ export function relayHttpToWsUrl(httpUrl: string): string {
 function sameOriginWsUrl(): string | null {
   if (typeof window === "undefined" || !window.location) return null;
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.host}`;
+  return `${proto}//${window.location.host}/teams/relay`;
 }
 
 function envRelayUrl(): string | null {

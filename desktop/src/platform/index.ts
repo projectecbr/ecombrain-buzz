@@ -88,11 +88,8 @@ export function getTransport(): PlatformTransport {
 
 /** Adapter B — identity & signing. Wired in Task 3. */
 //
-// Same lazy sync-proxy pattern as getTransport() above: the static
-// `import.meta.env.VITE_PLATFORM` branch lets the minifier drop the tauri
-// chunk (with its `sign_event` invoke) from dist-web and the localkey dev
-// signer from the desktop bundle. signer.bunker.ts (Phase 4, NIP-46) is
-// deliberately not referenced here so it stays out of both bundles.
+// The web development server uses an isolated local key. Production web
+// builds use the NIP-46 bunker; custodial keys never enter the browser.
 let signerImplPromise: Promise<PlatformSigner> | null = null;
 let signerProxy: PlatformSigner | null = null;
 
@@ -100,7 +97,9 @@ function loadSignerImpl(): Promise<PlatformSigner> {
   if (!signerImplPromise) {
     signerImplPromise =
       import.meta.env?.VITE_PLATFORM === "web"
-        ? import("./signer.localkey").then((m) => m.createLocalKeySigner())
+        ? import.meta.env?.DEV
+          ? import("./signer.localkey").then((m) => m.createLocalKeySigner())
+          : import("./signer.bunker").then((m) => m.createBunkerSigner())
         : import("./signer.tauri").then((m) => m.createTauriSigner());
   }
   return signerImplPromise;
