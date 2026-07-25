@@ -43,6 +43,15 @@ Relay image `ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0` run locally with `s
    deploys the upstream image mirrored to our registry instead of a local amd64 qemu build.
 6. **Supabase direct host is IPv6-only** — container path is the session pooler (see A4).
 7. **Local dev ports**: host brew postgres/redis occupy 5432/6379 → Buzz dev remapped to 6432/6479 (branch-local).
+8. **CF account topology (verified 2026-07-25 via dash as yannis@ecombrain.io):**
+   - Personal account `2b4b7eb9…cf45` (kieferyannis@gmail.com): Workers Free, NO zones.
+   - **Business account `83d987db…ff4d` (Yannis@ecombrain.io's Account): holds the `ecombrain.io`
+     zone (CF nameservers confirmed) — this is the correct deploy target for staging+production.**
+     Workers Free as of 2026-07-25 → needs Paid upgrade ($5/mo) + R2 activation ($0/mo);
+     no payment method on file (Chrome autofill has one card but no CVC).
+   - A third account (Dgac187@gmail.com's) is visible to the business login; NOT used (governance).
+   - The personal account's workers.dev subdomain `coveandlinen` will be replaced by the business
+     account's subdomain; RELAY_OPERATOR_API_ORIGIN + Doppler values update at Task 5.
 
 ## Local baseline (Task 2) — PASS
 - Toolchain: Hermit → Rust 1.95.0, Node 24.14.0, just 1.46.0.
