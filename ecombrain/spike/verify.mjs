@@ -329,7 +329,12 @@ async function cmdProvision(sk) {
 
   // Negative: unprovisioned Host must fail closed (router.rs:190-202 -> 404 generic).
   const bogus = `unprovisioned-${randomUUID().slice(0, 8)}.teams.ecombrain.internal`;
-  const res = await httpReq('GET', SPIKE_BASE + '/', { hostHeader: bogus, timeoutMs: 15000 });
+  // Through the ingress Worker, Host is injected; use the spike-only override
+  // (with an unprovisioned host) to exercise the same fail-closed path.
+  const bogusHeaders = process.env.SPIKE_TEST_SECRET
+    ? { 'x-spike-tenant-override': bogus, 'x-spike-secret': process.env.SPIKE_TEST_SECRET }
+    : {};
+  const res = await httpReq('GET', SPIKE_BASE + '/', { hostHeader: bogus, headers: bogusHeaders, timeoutMs: 15000 });
   const failClosed = res.status === 404;
   result('provision', 'unprovisioned-tenant-404', failClosed, `http=${res.status} host=${bogus}`);
 }
@@ -406,7 +411,12 @@ async function cmdMedia(sk) {
   // (sidecar is per-tenant; media.rs:528-532 NotFound).
   const prov2 = await provisionCommunity(TENANT_2, sk, ownerHex);
   console.log(`tenant2 provision http=${prov2.status} body=${JSON.stringify(prov2.json)}`);
-  const xt = await httpReq('GET', SPIKE_BASE + mediaPath, { hostHeader: TENANT_2, timeoutMs: 30000 });
+  // Against the ingress Worker, Host is overwritten by the worker; use the
+  // spike-only override headers instead (removed in production worker).
+  const xtHeaders = process.env.SPIKE_TEST_SECRET
+    ? { 'x-spike-tenant-override': TENANT_2, 'x-spike-secret': process.env.SPIKE_TEST_SECRET }
+    : {};
+  const xt = await httpReq('GET', SPIKE_BASE + mediaPath, { hostHeader: TENANT_2, headers: xtHeaders, timeoutMs: 30000 });
   result('media', 'cross-tenant-404', xt.status === 404, `http=${xt.status}`);
 
   const twentyMb = randomBytes(20 * 1024 * 1024);

@@ -9,7 +9,7 @@ Status: IN PROGRESS — A1/A3/A6 blocked on CF billing (see GO-NOGO.md), local e
 | A2 Upstash PSUBSCRIBE from container | PASS (protocol + container leg) | `redis-cli psubscribe` over TLS PASS (2026-07-25); relay container booted with staging `REDIS_URL` → "Redis pub/sub connected"; WS roundtrip through tenant host 10/10 delivered p50=268ms p95=365ms (qemu-emulated, remote services — floor, not ceiling). Only remaining leg: from CF's network |
 | A3 R2 via rust-s3 | mechanics PASS (MinIO) / R2 leg BLOCKED (billing) | Blossom upload/download byte-identical vs S3 path-style backend; R2-specific SigV4/checksum leg needs the enabled bucket |
 | A4 Supabase TCP from container | PASS | `buzz_staging` created; `buzz-admin migrate` applied (40 tables incl. partitioned events/delivery_log, verified via psql); relay container → "Postgres connected" via session pooler; provisioning + event writes landed (community rows visible) |
-| A5 bunker signing latency | local leg pending (bench in verify.mjs) | model: edge RTT + local sign |
+| A5 bunker signing latency | local leg PASS / edge leg pending | `verify.mjs bench`: local `finalizeEvent` p50=2.2ms p95=2.6ms. Bunker model = edge RTT + ~3ms sign; budget p95 < 300ms leaves ~297ms for RTT — edge RTT measured at Task 6 deploy |
 | A6 R2 checksum quirk | BLOCKED (billing) | with A3 |
 
 ## Task 4/6 pre-flight against staging-backed relay container (2026-07-25) — ALL PASS
