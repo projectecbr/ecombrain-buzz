@@ -84,6 +84,17 @@ export type SettingsSection =
 
 export const DEFAULT_SETTINGS_SECTION: SettingsSection = "profile";
 
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+const WEB_HIDDEN_SETTINGS = new Set<SettingsSection>([
+  "experimental",
+  "agents",
+  "compute",
+  "local-archive",
+  "mobile",
+  "updates",
+  "doctor",
+]);
+
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
   "profile",
   "notifications",
@@ -105,7 +116,8 @@ const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [
 export function isSettingsSection(value: unknown): value is SettingsSection {
   return (
     typeof value === "string" &&
-    (SETTINGS_SECTION_VALUES as readonly string[]).includes(value)
+    (SETTINGS_SECTION_VALUES as readonly string[]).includes(value) &&
+    (!IS_WEB || !WEB_HIDDEN_SETTINGS.has(value as SettingsSection))
   );
 }
 
@@ -132,7 +144,7 @@ export type SettingsPanelProps = {
   onSetSoundForSlot: (slot: SoundSlot, name: SoundName) => void;
 };
 
-export const settingsSections: SettingsSectionDescriptor[] = [
+const ALL_SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   {
     value: "appearance",
     label: "Appearance",
@@ -214,7 +226,13 @@ export const settingsSections: SettingsSectionDescriptor[] = [
   },
 ];
 
+export const settingsSections = ALL_SETTINGS_SECTIONS.filter(
+  ({ value }) => !IS_WEB || !WEB_HIDDEN_SETTINGS.has(value),
+);
+
 function formatThemeLabel(name: string): string {
+  if (name === "buzz") return "EcomBrain";
+  if (name === "buzz-dark") return "EcomBrain Dark";
   return name
     .split("-")
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
@@ -480,7 +498,7 @@ function ThemeSettingsCard() {
     >
       <SettingsSectionHeader
         title="Appearance"
-        description="Choose a theme for Buzz."
+        description="Choose a theme for EcomBrain Teams."
       />
 
       {/* Mode selector: System / Light / Dark */}
@@ -614,6 +632,15 @@ export function renderSettingsSection(
   section: SettingsSection,
   props: SettingsPanelProps,
 ): React.ReactNode {
+  if (IS_WEB && WEB_HIDDEN_SETTINGS.has(section)) {
+    return (
+      <ProfileSettingsCard
+        currentPubkey={props.currentPubkey}
+        fallbackDisplayName={props.fallbackDisplayName}
+      />
+    );
+  }
+
   switch (section) {
     case "profile":
       return (

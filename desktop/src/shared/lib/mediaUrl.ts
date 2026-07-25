@@ -17,6 +17,8 @@
 
 import { invoke } from "@tauri-apps/api/core";
 
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+
 // Matches: https://anything.com/media/{64-hex}.{ext}
 // Also matches thumbnails: /media/{64-hex}.thumb.jpg
 const RELAY_MEDIA_RE =
@@ -66,7 +68,7 @@ async function fetchProxyPort(): Promise<number | null> {
 /** Eagerly fetch the port at module load so it's ready by first render. */
 // The try/catch inside fetchProxyPort handles non-Tauri environments gracefully
 // (invoke will throw, we retry until timeout, then give up — no side effects).
-if (typeof window !== "undefined") {
+if (!IS_WEB && typeof window !== "undefined") {
   portPromise = fetchProxyPort();
 }
 
@@ -97,6 +99,7 @@ export function mediaProxyUrl(port: number, mediaPath: string): string {
  * Falls back to buzz-media:// if the proxy port isn't available yet.
  */
 export function rewriteRelayUrl(url: string): string {
+  if (IS_WEB) return url;
   const m = RELAY_MEDIA_RE.exec(url);
   if (!m) return url;
 

@@ -30,9 +30,6 @@ import { listenForDeepLinks } from "@/shared/deep-link";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
-import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
-import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
-import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 import { StepProgress } from "@/shared/ui/step-progress";
 
@@ -87,31 +84,19 @@ function useBootSplashHold(): BootSplashPhase {
   return phase;
 }
 
-// Animated Buzz mark for the loading gates. The static BuzzMark renders in
-// normal flow and sizes the box — it's plain SVG (no JS/SMIL), so it paints on
-// the very first frame even before scripting starts, avoiding a blank flash on
-// hard reload. The animated FuzzyLogo is layered on top and takes over once it
-// begins playing.
-function BeeLoader({
+function BrandLoader({
   ariaLabel,
   className,
-  tintClassName = "text-foreground",
 }: {
   ariaLabel: string;
   className?: string;
-  tintClassName?: string;
 }) {
   return (
-    <div className={cn("relative", tintClassName, className)}>
-      <BuzzMark className="block h-auto w-full" />
-      <FuzzyLogo
-        ariaLabel={ariaLabel}
-        className="absolute inset-0 h-full! w-full! [&>svg]:h-full [&>svg]:w-full [&>svg]:max-w-full"
-        fuzz
-        loop
-        loopRestSeconds={0}
-      />
-    </div>
+    <img
+      alt={ariaLabel}
+      className={className}
+      src="/teams/ecombrain-logo.png"
+    />
   );
 }
 
@@ -129,7 +114,10 @@ function AppLoadingGate() {
       <StartupWindowDragRegion />
       <ThemeGrainientBackground />
       <span className="sr-only">{LOADING_TEXT}</span>
-      <FlappingBee className="relative z-10 h-auto w-28" />
+      <BrandLoader
+        ariaLabel="EcomBrain Teams"
+        className="relative z-10 h-auto w-28"
+      />
     </div>
   );
 }
@@ -153,13 +141,28 @@ function WorkspaceSwitchGate() {
       <StartupWindowDragRegion />
       <span className="sr-only">Switching workspace…</span>
       {showSpinner ? (
-        <BeeLoader
-          ariaLabel="Switching workspace…"
-          className="h-auto w-20"
-          tintClassName="text-muted-foreground"
-        />
+        <BrandLoader ariaLabel="Switching workspace…" className="h-auto w-20" />
       ) : null}
     </div>
+  );
+}
+
+function TeamsSessionError() {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-background px-6 text-foreground">
+      <div className="flex max-w-sm flex-col items-center text-center">
+        <BrandLoader ariaLabel="EcomBrain Teams" className="h-20 w-20" />
+        <h1 className="mt-6 text-2xl font-semibold">
+          Teams session unavailable
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Return to EcomBrain and open Teams again to start a fresh session.
+        </p>
+        <Button className="mt-6" onClick={() => window.location.assign("/")}>
+          Return to EcomBrain
+        </Button>
+      </div>
+    </main>
   );
 }
 
@@ -192,7 +195,7 @@ function OnboardingLoadingGate() {
           </div>
 
           <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-            Welcome to Buzz
+            Welcome to EcomBrain Teams
           </h1>
           <p className="mt-3 max-w-[440px] text-sm leading-6 text-muted-foreground">
             Choose your first workspace to get started.
@@ -421,6 +424,7 @@ export function App() {
 
   // Show welcome setup for first-run users with no workspaces
   if (workspace.needsSetup) {
+    if (sharedIdentity) return <TeamsSessionError />;
     return (
       <WelcomeSetup
         defaultRelayUrl={workspace.defaultRelayUrl}

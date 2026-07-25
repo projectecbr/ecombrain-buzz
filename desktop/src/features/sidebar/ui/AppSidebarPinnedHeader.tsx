@@ -19,6 +19,8 @@ type SidebarSelectedView =
   | "pulse"
   | "projects";
 
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+
 type AppSidebarPinnedHeaderProps = {
   channelLabels: Record<string, string>;
   currentPubkey?: string;
@@ -68,7 +70,7 @@ export function AppSidebarPinnedHeader({
         onOpenChannel={onSelectChannel}
         onOpenResult={onOpenSearchResult}
         onOpenUser={(user) => onOpenDm({ pubkeys: [user.pubkey] })}
-        onCreateAgent={onCreateAgent}
+        onCreateAgent={IS_WEB ? undefined : onCreateAgent}
         onCreateChannel={onCreateChannel}
         suggestionChannels={suggestionChannels}
       />
@@ -110,32 +112,36 @@ export function AppSidebarPinnedHeader({
               </SidebarMenuButton>
             </SidebarMenuItem>
           </FeatureGate>
-          <FeatureGate feature="projects">
+          {!IS_WEB ? (
+            <FeatureGate feature="projects">
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  data-testid="open-projects-view"
+                  isActive={selectedView === "projects"}
+                  onClick={onSelectProjects}
+                  tooltip="Projects"
+                  type="button"
+                >
+                  <FolderGit2 className="h-4 w-4" />
+                  <span>Projects</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </FeatureGate>
+          ) : null}
+          {!IS_WEB ? (
             <SidebarMenuItem>
               <SidebarMenuButton
-                data-testid="open-projects-view"
-                isActive={selectedView === "projects"}
-                onClick={onSelectProjects}
-                tooltip="Projects"
+                data-testid="open-agents-view"
+                isActive={selectedView === "agents"}
+                onClick={onSelectAgents}
+                tooltip="Agents"
                 type="button"
               >
-                <FolderGit2 className="h-4 w-4" />
-                <span>Projects</span>
+                <Bot className="h-4 w-4" />
+                <span>Agents</span>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          </FeatureGate>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              data-testid="open-agents-view"
-              isActive={selectedView === "agents"}
-              onClick={onSelectAgents}
-              tooltip="Agents"
-              type="button"
-            >
-              <Bot className="h-4 w-4" />
-              <span>Agents</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
+          ) : null}
           <FeatureGate feature="workflows">
             <SidebarMenuItem>
               <SidebarMenuButton

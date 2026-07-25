@@ -76,6 +76,8 @@ type CollapsibleSidebarGroup =
 
 type CreateChannelKind = "stream" | "forum";
 
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+
 type AppSidebarProps = {
   activeWorkspace: Workspace | null;
   channels: Channel[];
@@ -236,7 +238,7 @@ export function AppSidebar({
   const [isSidebarUpdateCardDismissed, setIsSidebarUpdateCardDismissed] =
     React.useState(false);
   const showSidebarUpdateCard =
-    canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
+    !IS_WEB && canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
   const [isNewDmOpenInternal, setIsNewDmOpenInternal] = React.useState(false);
   const isNewDmOpen = isNewDmOpenProp ?? isNewDmOpenInternal;
   const setIsNewDmOpen = onNewDmOpenChange ?? setIsNewDmOpenInternal;

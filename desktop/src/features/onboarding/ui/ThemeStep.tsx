@@ -230,7 +230,7 @@ export function ThemeStep({ actions, direction }: ThemeStepProps) {
               Pick a theme
             </h1>
             <p className="mt-3 text-sm leading-6 text-muted-foreground">
-              Choose a look that makes Buzz feel like yours.
+              Choose a look that makes EcomBrain Teams feel like yours.
             </p>
           </div>
         </div>

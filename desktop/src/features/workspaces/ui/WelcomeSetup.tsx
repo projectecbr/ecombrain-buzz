@@ -67,9 +67,9 @@ function NostrKeyImportPage({
           Use your existing key
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Import your Nostr private key to use that identity with Buzz. If this
-          key already has a profile on the relay, your name and avatar are
-          restored automatically.
+          Import your Nostr private key to use that identity with EcomBrain
+          Teams. If this key already has a profile on the relay, your name and
+          avatar are restored automatically.
         </p>
       </div>
 
@@ -222,14 +222,13 @@ export function WelcomeSetup({
             transitionKey={`welcome-${welcomeEffect}-${transitionDirection}`}
           >
             <img
-              alt="Buzz"
+              alt="EcomBrain Teams"
               className="h-14 w-14 rounded-xl shadow-xs"
-              src="/app-icon@2x.png"
-              srcSet="/app-icon@2x.png 1x, /app-icon@3x.png 2x"
+              src="/teams/ecombrain-logo.png"
             />
 
             <h1 className="mt-6 text-3xl font-semibold tracking-tight">
-              Welcome to Buzz
+              Welcome to EcomBrain Teams
             </h1>
             <p className="mt-3 max-w-[440px] text-sm leading-6 text-muted-foreground">
               Choose your first workspace to get started.

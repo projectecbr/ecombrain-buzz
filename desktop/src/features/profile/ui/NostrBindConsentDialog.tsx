@@ -72,7 +72,7 @@ export function NostrBindConsentDialog() {
         .catch((error) => {
           console.warn("get_identity for nostr bind failed:", error);
           setIdentity(null);
-          setError("Could not load the current Buzz identity.");
+          setError("Could not load the current EcomBrain Teams identity.");
         });
     });
 
@@ -157,9 +157,10 @@ export function NostrBindConsentDialog() {
     <Dialog onOpenChange={handleOpenChange} open={payload !== null}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle>Bind Buzz identity?</DialogTitle>
+          <DialogTitle>Bind EcomBrain Teams identity?</DialogTitle>
           <DialogDescription>
-            Buzz will sign a one-time proof. Your private key is not shared.
+            EcomBrain Teams will sign a one-time proof. Your private key is not
+            shared.
           </DialogDescription>
         </DialogHeader>
 
@@ -186,7 +187,7 @@ export function NostrBindConsentDialog() {
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground">Buzz identity</dt>
+                <dt className="text-muted-foreground">Teams identity</dt>
                 <dd className="break-all text-right font-medium">
                   {identity
                     ? `${identity.displayName} (${truncatePubkey(identity.pubkey)})`

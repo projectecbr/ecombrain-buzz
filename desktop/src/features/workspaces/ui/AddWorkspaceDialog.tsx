@@ -109,8 +109,8 @@ export function AddWorkspaceDialog({
         <DialogHeader>
           <DialogTitle>Add Workspace</DialogTitle>
           <DialogDescription>
-            Connect to another Buzz relay. Each workspace has its own channels,
-            messages, and identity.
+            Connect to another EcomBrain Teams relay. Each workspace has its own
+            channels, messages, and identity.
           </DialogDescription>
         </DialogHeader>
         <form
