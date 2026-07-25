@@ -19,21 +19,42 @@ export type TransportHandle = {
 };
 
 /**
+ * Inbound message from the transport.
+ *
+ * Text frames are delivered as plain strings (matching the plugin's
+ * `{ type: "Text", data }` payload, which `getTextPayload` also accepts as a
+ * bare string). Socket lifecycle events mirror the plugin's control frames so
+ * `relayClientSession`'s Close/Error reconnect handling works unchanged on
+ * both platforms.
+ */
+export type TransportMessage =
+  | string
+  | { type: "Close"; data: unknown }
+  | { type: "Error"; data: unknown };
+
+/**
  * Adapter A — relay WebSocket transport.
  *
  * Mirrors the `plugin:websocket` seam in `shared/api/relayClientSession.ts`:
- * connect returns a handle and delivers every inbound text frame to
- * `onMessage`; `send` transmits one text frame; `close` tears down.
+ * connect returns a handle once the socket is open and delivers inbound
+ * frames to `onMessage`; `send` transmits one text frame; `close` tears down.
  * Implementations map browser `WebSocket` events onto the same shapes the
  * Tauri plugin produced so `relayClientSession` logic stays untouched.
  */
 export interface PlatformTransport {
   connect(
     url: string,
-    onMessage: (handle: TransportHandle, message: string) => void,
+    onMessage: (handle: TransportHandle, message: TransportMessage) => void,
   ): Promise<TransportHandle>;
-  send(handle: TransportHandle, frame: string): void;
-  close(handle: TransportHandle): void;
+  /**
+   * Send one text frame. The Tauri adapter returns the plugin `invoke`
+   * promise (rejections drive the reconnect path in `sendRaw`); the browser
+   * adapter sends synchronously and throws on a dead socket, which `await`
+   * turns into the same rejection.
+   */
+  send(handle: TransportHandle, frame: string): void | Promise<void>;
+  /** Tear down the socket with a WebSocket 1000 close frame. */
+  close(handle: TransportHandle, reason?: string): void;
 }
 
 /** Unsigned event input, mirroring the Rust `sign_event` command input. */
