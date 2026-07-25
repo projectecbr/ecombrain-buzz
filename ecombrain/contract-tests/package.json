@@ -1,0 +1,14 @@
+{
+  "name": "ecombrain-contract-tests",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Phase 2 contract tests: platform adapters against the local Buzz relay (ws://localhost:3335).",
+  "scripts": {
+    "test": "node --test transport.test.mjs"
+  },
+  "dependencies": {
+    "nostr-tools": "^2.24.1",
+    "ws": "^8.21.1"
+  }
+}
