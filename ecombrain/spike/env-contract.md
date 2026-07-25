@@ -10,7 +10,7 @@ Branch configs inherit all `stg` keys; the keys below are spike-specific overrid
 | `REDIS_URL` | Upstash staging (`proven-sunbird-148975`), TLS `rediss://` TCP endpoint derived from the existing staging REST credentials. PSUBSCRIBE roundtrip verified 2026-07-25 (A2 protocol pre-check). Shared staging DB — spike uses `buzzspike.*`/presence keyspace only; dedicated DB recommended for Phase 1. | Doppler `stg_teams` |
 | `RELAY_OPERATOR_PUBKEYS` | generated keypair (openssl/nostr-tools, 2026-07-25) | Doppler `stg_teams` |
 | `OPERATOR_NSEC` | secret half of the same keypair (hex) | Doppler `stg_teams` + `/tmp/buzz-spike/operator-secret.hex` (0600) |
-| `RELAY_OPERATOR_API_ORIGIN` | `https://ecombrain-teams-spike.coveandlinen.workers.dev` (workers subdomain `coveandlinen`) | Doppler `stg_teams` |
+| `RELAY_OPERATOR_API_ORIGIN` | `https://ecombrain-teams-spike.yannis-83d.workers.dev` (workers subdomain `yannis-83d`) | Doppler `stg_teams` |
 | `BUZZ_BIND_ADDR` | `0.0.0.0:3000` (verified env name in `crates/buzz-relay/src/config.rs:225`; plan's `LISTEN_ADDR` was wrong) | Doppler `stg_teams` |
 | `BUZZ_HUDDLE_AUDIO_AVAILABLE` | `false` (huddle kill-switch, spec §3.1) | Doppler `stg_teams` |
 | `BUZZ_S3_ENDPOINT` | R2 S3 endpoint for account `2b4b7eb9…cf45` | Doppler `stg_teams` |
