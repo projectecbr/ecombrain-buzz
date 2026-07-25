@@ -66,6 +66,7 @@ import { cn } from "@/shared/lib/cn";
 import { BuzzMark } from "@/shared/ui/buzz-logo/BuzzMark";
 import { FlappingBee } from "@/shared/ui/buzz-logo/FlappingBee";
 import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
+import { Button } from "@/shared/ui/button";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 const LOADING_TEXT = "Setting up your community...";
@@ -202,6 +203,25 @@ function CommunitySwitchGate() {
         />
       ) : null}
     </div>
+  );
+}
+
+function TeamsSessionError() {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-background px-6 text-foreground">
+      <div className="flex max-w-sm flex-col items-center text-center">
+        <FuzzyLogo ariaLabel="EcomBrain Teams" className="h-20 w-20" />
+        <h1 className="mt-6 text-2xl font-semibold">
+          Teams session unavailable
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-muted-foreground">
+          Return to EcomBrain and open Teams again to start a fresh session.
+        </p>
+        <Button className="mt-6" onClick={() => window.location.assign("/")}>
+          Return to EcomBrain
+        </Button>
+      </div>
+    </main>
   );
 }
 
@@ -496,6 +516,7 @@ function CommunityApp({
   let appContent: ReactNode = null;
   if (!transaction) {
     if (community.needsSetup) {
+      if (sharedIdentity) return <TeamsSessionError />;
       // Show welcome setup for first-run users with no communities
       appContent = (
         <WelcomeSetup

@@ -42,6 +42,8 @@ import { useOpenAgentActivity } from "@/features/agents/useOpenAgentActivity";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, RelayEvent } from "@/shared/api/types";
+
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey, truncatePubkey } from "@/shared/lib/pubkey";
@@ -667,7 +669,7 @@ export function UserProfilePopover({
               ) : null}
               {showAnyProfileActions ? (
                 <div className="flex gap-2">
-                  {showHumanProfileActions ? (
+                  {showHumanProfileActions && !IS_WEB ? (
                     <Button
                       aria-label="Wave"
                       className="buzz-wave-hover-trigger shrink-0 px-3 transition-transform duration-100 ease-out motion-reduce:transition-none motion-safe:active:scale-[0.97]"

@@ -43,7 +43,7 @@ export function createBrowserCommands(
             : defaultRelayWsUrl()
         ) as T;
       }
-      if (command === "is_shared_identity") return false as T;
+      if (command === "is_shared_identity") return true as T;
 
       const handler = handlers[command];
       if (!handler) {

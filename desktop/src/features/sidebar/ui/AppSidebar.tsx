@@ -81,6 +81,8 @@ type CollapsibleSidebarGroup =
 
 type CreateChannelKind = "stream" | "forum";
 
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+
 type AppSidebarProps = {
   addCommunityPrefill?: AddCommunityPrefillRequest | null;
   activeCommunity: Community | null;
@@ -244,7 +246,7 @@ export function AppSidebar({
   const [isSidebarUpdateCardDismissed, setIsSidebarUpdateCardDismissed] =
     React.useState(false);
   const showSidebarUpdateCard =
-    canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
+    !IS_WEB && canShowSidebarUpdateCard && !isSidebarUpdateCardDismissed;
   const [dmActionsMenuOpen, setDmActionsMenuOpen] = React.useState(false);
   const scrollRef = React.useRef<HTMLDivElement>(null);
   useSidebarScrollLock(scrollRef);

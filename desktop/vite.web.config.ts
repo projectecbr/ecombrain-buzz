@@ -1,4 +1,5 @@
 import path from "node:path";
+import { rename, rm } from "node:fs/promises";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
@@ -13,11 +14,25 @@ export default defineConfig(async () => ({
     "import.meta.env.VITE_PLATFORM": JSON.stringify("web"),
   },
   plugins: [
+    {
+      name: "ecombrain-teams-html-entry",
+      async writeBundle() {
+        await rename(
+          path.resolve(__dirname, "dist-web/index.web.html"),
+          path.resolve(__dirname, "dist-web/index.html"),
+        );
+        await Promise.all(
+          ["buzz.svg", "app-icon@2x.png", "app-icon@3x.png"].map((name) =>
+            rm(path.resolve(__dirname, "dist-web", name), { force: true }),
+          ),
+        );
+      },
+    },
     tanstackRouter({
       target: "react",
       routesDirectory: "./src/app/routes",
-      generatedRouteTree: "./src/app/routeTree.gen.ts",
-      virtualRouteConfig: "./src/app/routes.ts",
+      generatedRouteTree: "./src/app/routeTree.web.gen.ts",
+      virtualRouteConfig: "./src/app/routes.web.ts",
       quoteStyle: "double",
       semicolons: true,
       routeTreeFileHeader: [
@@ -28,6 +43,82 @@ export default defineConfig(async () => ({
   ],
   resolve: {
     alias: {
+      "@/features/huddle/components/HuddleAttachment": path.resolve(
+        __dirname,
+        "src/platform/huddle.web-stub.tsx",
+      ),
+      "@/features/huddle/components/HuddleIndicator": path.resolve(
+        __dirname,
+        "src/platform/huddle.web-stub.tsx",
+      ),
+      "@/features/huddle/lib/huddleChannelName": path.resolve(
+        __dirname,
+        "src/platform/huddle.web-stub.tsx",
+      ),
+      "@/features/huddle": path.resolve(
+        __dirname,
+        "src/platform/huddle.web-stub.tsx",
+      ),
+      "@/features/messages/lib/messageLink": path.resolve(
+        __dirname,
+        "src/platform/messageLink.web.ts",
+      ),
+      "@/features/messages/lib/remarkMessageLinks": path.resolve(
+        __dirname,
+        "src/platform/remarkMessageLinks.web-stub.ts",
+      ),
+      "@/shared/ui/buzz-logo/FuzzyLogo": path.resolve(
+        __dirname,
+        "src/platform/brand-logo.web.tsx",
+      ),
+      "@/shared/deep-link": path.resolve(
+        __dirname,
+        "src/platform/deep-link.web-stub.ts",
+      ),
+      "@/app/routeTree.gen": path.resolve(
+        __dirname,
+        "src/app/routeTree.web.gen.ts",
+      ),
+      "@tauri-apps/api/app": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/api/core": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/api/event": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/api/path": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/api/webview": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/api/window": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/plugin-notification": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/plugin-opener": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/plugin-process": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
+      "@tauri-apps/plugin-updater": path.resolve(
+        __dirname,
+        "src/platform/tauri.web-stub.ts",
+      ),
       // E2E mocks target the Tauri runtime only; keep the mock invoke surface
       // (incl. `plugin:websocket|*` strings) out of the web bundle.
       "@/testing/e2eBridge": path.resolve(

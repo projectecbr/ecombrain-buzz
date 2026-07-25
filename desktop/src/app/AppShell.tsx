@@ -96,6 +96,8 @@ import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
 import { SidebarInset, SidebarProvider } from "@/shared/ui/sidebar";
 import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
+
+const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
 const LazySettingsScreen = React.lazy(async () => {
   const module = await import("@/features/settings/ui/SettingsScreen");
   return { default: module.SettingsScreen };
@@ -972,18 +974,20 @@ export function AppShell() {
                   </SidebarProvider>
                 </div>
 
-                <div className="absolute inset-x-0 bottom-0 z-0 h-(--buzz-huddle-drawer-height)">
-                  <HuddleBar
-                    className="h-full"
-                    onOpenThread={(channelId, messageId) => {
-                      void goChannel(channelId, {
-                        messageId,
-                        threadRootId: messageId,
-                      });
-                    }}
-                    onVisibilityChange={setIsHuddleDrawerOpen}
-                  />
-                </div>
+                {!IS_WEB ? (
+                  <div className="absolute inset-x-0 bottom-0 z-0 h-(--buzz-huddle-drawer-height)">
+                    <HuddleBar
+                      className="h-full"
+                      onOpenThread={(channelId, messageId) => {
+                        void goChannel(channelId, {
+                          messageId,
+                          threadRootId: messageId,
+                        });
+                      }}
+                      onVisibilityChange={setIsHuddleDrawerOpen}
+                    />
+                  </div>
+                ) : null}
               </div>
             </RemindMeLaterProvider>
           </HuddleProvider>
