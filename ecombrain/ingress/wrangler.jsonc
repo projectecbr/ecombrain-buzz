@@ -1,0 +1,29 @@
+{
+  "name": "ecombrain-teams-spike",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-07-01",
+  "containers": [
+    {
+      "class_name": "RelayContainer",
+      "image": "ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0",
+      "instance_type": "standard-1",
+      "max_instances": 1
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "RELAY", "class_name": "RelayContainer" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayContainer"] }],
+  "vars": {
+    "RELAY_OPERATOR_API_ORIGIN": "https://ecombrain-teams-spike.coveandlinen.workers.dev",
+    "RELAY_URL": "wss://ecombrain-teams-spike.coveandlinen.workers.dev",
+    "BUZZ_MEDIA_BASE_URL": "https://ecombrain-teams-spike.coveandlinen.workers.dev/media",
+    "BUZZ_BIND_ADDR": "0.0.0.0:3000",
+    "BUZZ_HUDDLE_AUDIO_AVAILABLE": "false",
+    "BUZZ_S3_ENDPOINT": "https://2b4b7eb999d294af4c0e419d4a84cf45.r2.cloudflarestorage.com",
+    "BUZZ_S3_BUCKET": "ecombrain-teams-media-staging",
+    "BUZZ_S3_REGION": "auto"
+  }
+}
