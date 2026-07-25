@@ -6,11 +6,25 @@ Status: IN PROGRESS — A1/A3/A6 blocked on CF billing (see GO-NOGO.md), local e
 | Check | Result | Evidence |
 |-------|--------|----------|
 | A1 CF Containers always-on | BLOCKED (billing) | account on Workers Free; Containers need Paid ($5/mo) — money-boundary report sent 2026-07-25 |
-| A2 Upstash PSUBSCRIBE from container | PASS (protocol) / container leg pending | `redis-cli psubscribe buzzspike.*` over `rediss://` to staging Upstash received published message, 2026-07-25 (local pre-check; container egress leg runs with Task 6) |
-| A3 R2 via rust-s3 | BLOCKED (billing) | R2 not enabled on account; $0 base activation needs payment method |
-| A4 Supabase TCP from container | local leg PASS / container leg pending | `buzz_staging` created on staging project `omknchjybqvkxdgnapui`, psql roundtrip OK. NOTE: `db.<ref>.supabase.co` is IPv6-only; containers will use the session pooler (IPv4, port 5432) — sqlx over session pooler behaves as direct TCP for our purposes; documented in env-contract.md |
+| A2 Upstash PSUBSCRIBE from container | PASS (protocol + container leg) | `redis-cli psubscribe` over TLS PASS (2026-07-25); relay container booted with staging `REDIS_URL` → "Redis pub/sub connected"; WS roundtrip through tenant host 10/10 delivered p50=268ms p95=365ms (qemu-emulated, remote services — floor, not ceiling). Only remaining leg: from CF's network |
+| A3 R2 via rust-s3 | mechanics PASS (MinIO) / R2 leg BLOCKED (billing) | Blossom upload/download byte-identical vs S3 path-style backend; R2-specific SigV4/checksum leg needs the enabled bucket |
+| A4 Supabase TCP from container | PASS | `buzz_staging` created; `buzz-admin migrate` applied (40 tables incl. partitioned events/delivery_log, verified via psql); relay container → "Postgres connected" via session pooler; provisioning + event writes landed (community rows visible) |
 | A5 bunker signing latency | local leg pending (bench in verify.mjs) | model: edge RTT + local sign |
 | A6 R2 checksum quirk | BLOCKED (billing) | with A3 |
+
+## Task 4/6 pre-flight against staging-backed relay container (2026-07-25) — ALL PASS
+
+Relay image `ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0` run locally with `stg_teams` env
+(Supabase buzz_staging via pooler, Upstash TLS; S3 pointed at local MinIO for the boot probe):
+
+- `verify.mjs provision`: `POST /operator/communities` NIP-98 → `created`, re-run → `existed`
+  (idempotent converge); unprovisioned host → 404 fail-closed. NOTE: NIP-98 has no nonce —
+  identical requests within the same second collide in the replay guard (fixed in verify.mjs
+  with a 1.1s gap; relevant for the Agent Bridge design later).
+- `verify.mjs roundtrip 10`: 10/10 WS deliveries (NIP-42 mandatory — AUTH kind:22242 relay tag
+  = `wss://<tenantHost>`), p50 268ms p95 365ms under qemu emulation.
+- `verify.mjs media`: 1MB upload → GET sha256-identical; second community `tenant-other…`
+  provisioned → cross-tenant GET of the same hash → 404 (sidecar gate PASS); 20MB upload PASS.
 
 ## Verified deviations from spec/plan (important for Phase 1+)
 
