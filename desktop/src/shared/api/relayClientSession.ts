@@ -1,5 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
-
+import { getTransport, type TransportHandle } from "@/platform";
 import {
   createAuthEvent,
   getRelayWsUrl,
@@ -53,7 +52,7 @@ const STALL_CHECK_INTERVAL_MS = 10_000;
 const STALL_IDLE_TIMEOUT_MS = 60_000;
 
 export class RelayClient {
-  private wsId: number | null = null;
+  private wsHandle: TransportHandle | null = null;
   private relayUrl: string | null = null;
   private connectPromise: Promise<void> | null = null;
   private reconnectTimeout: number | null = null;
@@ -72,7 +71,6 @@ export class RelayClient {
   private reconnectListeners = new Set<() => void>();
   private hasConnectedOnce = false;
   private notifyReconnectListeners = false;
-  private onMessageChannel: Channel<unknown> | null = null;
   private connectionGeneration = 0;
 
   /**
@@ -118,9 +116,9 @@ export class RelayClient {
     this.terminal = false;
     this.connectionStateEmitter.set("idle");
 
-    if (this.wsId !== null) {
-      void closeWebSocket(this.wsId, "workspace switch");
-      this.wsId = null;
+    if (this.wsHandle !== null) {
+      closeWebSocket(this.wsHandle.id, "workspace switch");
+      this.wsHandle = null;
     }
 
     this.connectPromise = null;
@@ -152,7 +150,6 @@ export class RelayClient {
     this.eventBuffer = [];
     this.reconnectListeners.clear();
     this.connectionStateEmitter.clear();
-    this.onMessageChannel = null;
     this.reconnectDelayMs = RECONNECT_BASE_DELAY_MS;
   }
 
@@ -313,7 +310,7 @@ export class RelayClient {
     rootEventId?: string | null,
   ) {
     // Bail when disconnected — not worth triggering a reconnect for ephemeral typing events.
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       return;
     }
     const event = await signRelayEvent({
@@ -485,7 +482,7 @@ export class RelayClient {
       return this.connectPromise;
     }
 
-    if (this.wsId !== null) {
+    if (this.wsHandle !== null) {
       return;
     }
 
@@ -516,15 +513,12 @@ export class RelayClient {
     }
 
     const generation = ++this.connectionGeneration;
-    this.onMessageChannel = new Channel<unknown>((message) => {
-      void this.handleWsMessage(message, generation);
-    });
-
-    this.wsId = await invoke<number>("plugin:websocket|connect", {
-      url: this.relayUrl,
-      onMessage: this.onMessageChannel,
-      config: {},
-    });
+    this.wsHandle = await getTransport().connect(
+      this.relayUrl,
+      (_handle, message) => {
+        void this.handleWsMessage(message, generation);
+      },
+    );
 
     await new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
@@ -601,17 +595,11 @@ export class RelayClient {
   }
 
   private async sendRaw(payload: unknown[]) {
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       throw new Error("Relay socket is not connected.");
     }
 
-    await invoke("plugin:websocket|send", {
-      id: this.wsId,
-      message: {
-        type: "Text",
-        data: JSON.stringify(payload),
-      },
-    });
+    await getTransport().send(this.wsHandle, JSON.stringify(payload));
   }
 
   private normalizeRelayError(error: unknown, fallbackMessage: string) {
@@ -652,7 +640,7 @@ export class RelayClient {
   }
 
   private async closeSubscription(subId: string) {
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       return;
     }
 
@@ -909,7 +897,7 @@ export class RelayClient {
       !shouldScheduleReconnect({
         terminal: this.terminal,
         hasPendingReconnect: this.reconnectTimeout !== null,
-        hasLiveSocket: this.wsId !== null,
+        hasLiveSocket: this.wsHandle !== null,
         keepAliveRequested: this.keepAliveRequested,
         hasLiveSubscriptions: this.hasLiveSubscriptions(),
       })
@@ -957,7 +945,6 @@ export class RelayClient {
       reconnect?: boolean;
     },
   ) {
-    this.onMessageChannel = null;
     this.stallWatchdog.stop();
     this.connectionGeneration++;
     if (this.flushTimeout !== null) window.clearTimeout(this.flushTimeout);
@@ -982,11 +969,11 @@ export class RelayClient {
       this.reconnectTimeout = null;
     }
 
-    if (this.wsId !== null) {
-      void closeWebSocket(this.wsId, "connection reset");
+    if (this.wsHandle !== null) {
+      closeWebSocket(this.wsHandle.id, "connection reset");
     }
 
-    this.wsId = null;
+    this.wsHandle = null;
 
     if (this.authRequest) {
       window.clearTimeout(this.authRequest.timeout);

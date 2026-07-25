@@ -1,28 +1,14 @@
-import { invoke } from "@tauri-apps/api/core";
+import { getTransport } from "@/platform";
 
 /**
- * tauri-plugin-websocket 2.4.2 registers only `connect` and `send` — there is
- * no `disconnect` command, so invoking one rejects and the socket leaks. Close
- * the way the plugin's own JS API does: send a Close frame; the plugin's read
- * loop drops the connection when the peer echoes the Close (or the TCP read
- * stream terminates).
+ * Close a relay WebSocket through the platform transport seam (Adapter A).
+ *
+ * Tauri: tauri-plugin-websocket 2.4.2 registers only `connect` and `send` —
+ * there is no `disconnect` command, so the transport sends a 1000 Close frame
+ * and the plugin's read loop drops the connection when the peer echoes the
+ * Close. Web: `WebSocket.close(1000, reason)`. Both swallow errors from
+ * already-gone sockets.
  */
-export function closeWebSocket(
-  id: number,
-  reason: string,
-  invokeFn: typeof invoke = invoke,
-): Promise<void> {
-  return invokeFn("plugin:websocket|send", {
-    id,
-    message: {
-      type: "Close",
-      data: { code: 1000, reason },
-    },
-  }).then(
-    () => undefined,
-    (err) => {
-      // Expected when the socket is already gone; greppable for anything else.
-      console.debug(`closeWebSocket(${id}, ${reason}) rejected:`, err);
-    },
-  );
+export function closeWebSocket(id: number, reason: string): void {
+  getTransport().close({ id }, reason);
 }

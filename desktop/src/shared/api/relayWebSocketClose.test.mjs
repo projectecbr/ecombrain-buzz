@@ -4,13 +4,23 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { closeWebSocket } from "./relayWebSocketClose.ts";
+import { createTauriTransport } from "../../platform/transport.tauri.ts";
 
-test("closeWebSocket sends a Close frame through plugin:websocket|send", async () => {
+// The close/send wire shapes moved behind the transport seam in Phase 2
+// Task 2 (closeWebSocket now delegates to getTransport().close); these tests
+// pin the exact plugin:websocket frames the Tauri adapter must produce.
+
+test("transport.close sends a Close frame through plugin:websocket|send", async () => {
   const calls = [];
-  await closeWebSocket(42, "workspace switch", async (cmd, args) => {
-    calls.push({ cmd, args });
+  const transport = createTauriTransport({
+    invokeFn: async (cmd, args) => {
+      calls.push({ cmd, args });
+    },
   });
+
+  transport.close({ id: 42 }, "workspace switch");
+  // close() is fire-and-forget; let the invoke promise settle.
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.equal(calls.length, 1);
   assert.equal(calls[0].cmd, "plugin:websocket|send");
@@ -23,16 +33,38 @@ test("closeWebSocket sends a Close frame through plugin:websocket|send", async (
   });
 });
 
-test("closeWebSocket swallows send failures (socket already gone)", async () => {
-  await closeWebSocket(7, "connection reset", async () => {
-    throw new Error("WebSocket connection not found");
+test("transport.close swallows send failures (socket already gone)", async () => {
+  const transport = createTauriTransport({
+    invokeFn: async () => {
+      throw new Error("WebSocket connection not found");
+    },
+  });
+  transport.close({ id: 7 }, "connection reset");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("transport.send sends a Text frame through plugin:websocket|send", async () => {
+  const calls = [];
+  const transport = createTauriTransport({
+    invokeFn: async (cmd, args) => {
+      calls.push({ cmd, args });
+    },
+  });
+
+  await transport.send({ id: 9 }, '["REQ","s",{}]');
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].cmd, "plugin:websocket|send");
+  assert.deepEqual(calls[0].args, {
+    id: 9,
+    message: { type: "Text", data: '["REQ","s",{}]' },
   });
 });
 
 // Regression guard: tauri-plugin-websocket registers only `connect` and
 // `send` — there is no `disconnect` command. Invoking one rejects silently
 // and leaks the socket (relay zombie pile, workspace-switch disconnects).
-// Any socket teardown must go through closeWebSocket.
+// Any socket teardown must go through the transport's Close frame.
 test("no source file invokes the nonexistent plugin:websocket|disconnect command", () => {
   const srcRoot = path.resolve(
     path.dirname(fileURLToPath(import.meta.url)),
@@ -62,6 +94,6 @@ test("no source file invokes the nonexistent plugin:websocket|disconnect command
   assert.deepEqual(
     offenders,
     [],
-    "plugin:websocket|disconnect does not exist in tauri-plugin-websocket — use closeWebSocket (Close frame via plugin:websocket|send) instead",
+    "plugin:websocket|disconnect does not exist in tauri-plugin-websocket — use the transport close (Close frame via plugin:websocket|send) instead",
   );
 });

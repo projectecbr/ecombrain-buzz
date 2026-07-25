@@ -28,8 +28,17 @@ test("getPlatform_returnsWebWhenVitePlatformIsWeb", () => {
   }
 });
 
-test("platformFactories_existAndThrowNotWiredYet", () => {
-  const factories = { getTransport, getSigner, getCommands, getMedia };
+test("getTransport_returnsLazyAdapterWithoutLoadingImpl", () => {
+  // Wired in Task 2: returns a lazy proxy synchronously; the real adapter
+  // (tauri or browser) loads on first connect() via dynamic import.
+  const transport = getTransport();
+  assert.equal(typeof transport.connect, "function");
+  assert.equal(typeof transport.send, "function");
+  assert.equal(typeof transport.close, "function");
+});
+
+test("platformFactories_signerCommandsMediaStillThrowNotWiredYet", () => {
+  const factories = { getSigner, getCommands, getMedia };
   for (const [name, factory] of Object.entries(factories)) {
     assert.equal(typeof factory, "function", `${name} must be exported`);
     assert.throws(() => factory(), /not wired yet/, `${name} must throw`);
