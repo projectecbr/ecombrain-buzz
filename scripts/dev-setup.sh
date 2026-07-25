@@ -89,6 +89,13 @@ fail_if_local_redis_blocks_compose() {
   if docker ps --format '{{.Names}}' | grep -qx 'buzz-redis'; then
     return
   fi
+  # EcomBrain spike: only fail when REDIS_URL actually targets host port 6379 —
+  # this host runs a brew redis on 6379, so Buzz dev redis is remapped to 6479.
+  local redis_port
+  redis_port=$(printf '%s' "${REDIS_URL:-redis://localhost:6379}" | sed -E 's|.*:([0-9]+)/?$|\1|')
+  if [[ "${redis_port}" != "6379" ]]; then
+    return
+  fi
   local redis_pids
   redis_pids=$(lsof -nP -iTCP:6379 -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 && $1 == "redis-ser" {print $2}' | sort -u | tr '
 ' ' ' || true)
