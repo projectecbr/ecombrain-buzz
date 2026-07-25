@@ -327,6 +327,7 @@ export function channelHandlers(
     if (typeof ttlSeconds === "number") {
       tags.push(["ttl", String(ttlSeconds)]);
     }
+    await ctx.bindRoom(channelId);
     await submitEvent({ kind: KIND_CREATE_CHANNEL, content: "", tags });
 
     const events = await relayQuery([

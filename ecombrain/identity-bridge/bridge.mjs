@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 
 import {
   finalizeEvent,
@@ -17,6 +18,23 @@ const CONNECTION_SECRET = /^[A-Za-z0-9_-]{43}$/;
 const MAX_REQUEST_BYTES = 128 * 1024;
 const RATE_WINDOW_MS = 10_000;
 const RATE_LIMIT = 30;
+
+export function serviceHeaders({ secret, audience, method, url, body, now = Date.now(), requestId = randomUUID() }) {
+  const issuedAt = Math.floor(now / 1000);
+  const expiresAt = issuedAt + 30;
+  const bodyHash = createHash("sha256").update(body).digest("hex");
+  const path = new URL(url).pathname;
+  const canonical = [method, path, audience, issuedAt, expiresAt, requestId, bodyHash].join("\n");
+  return {
+    Authorization: `Teams-HMAC ${createHmac("sha256", secret).update(canonical).digest("hex")}`,
+    "Content-Type": "application/json",
+    "X-Teams-Service-Audience": audience,
+    "X-Teams-Service-Issued-At": String(issuedAt),
+    "X-Teams-Service-Expires-At": String(expiresAt),
+    "X-Teams-Service-Request-Id": requestId,
+    "X-Teams-Service-Body-Sha256": bodyHash,
+  };
+}
 
 function validRpc(value) {
   return (
@@ -167,13 +185,17 @@ export async function startBridge() {
   const bunkerSecret = hexToBytes(secretHex);
   const bunkerPubkey = getPublicKey(bunkerSecret);
   const callProduct = async (body) => {
+    const rawBody = JSON.stringify(body);
     const response = await fetch(productApiUrl, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${serviceSecret}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+      headers: serviceHeaders({
+        secret: serviceSecret,
+        audience: `teams-identity-bridge:${bunkerPubkey}`,
+        method: "POST",
+        url: productApiUrl,
+        body: rawBody,
+      }),
+      body: rawBody,
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) {

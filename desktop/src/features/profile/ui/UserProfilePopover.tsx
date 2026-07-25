@@ -39,7 +39,7 @@ import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { sendChannelMessage } from "@/shared/api/tauri";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 
-const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey, truncatePubkey } from "@/shared/lib/pubkey";

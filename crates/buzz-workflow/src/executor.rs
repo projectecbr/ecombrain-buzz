@@ -403,9 +403,19 @@ pub fn resolve_step_templates(
     };
 
     match &step.action {
-        SendMessage { text, channel } => Ok(SendMessage {
+        SendMessage {
+            text,
+            channel,
+            mentions,
+            fire_id,
+        } => Ok(SendMessage {
             text: t(text)?,
             channel: t_opt(channel)?,
+            mentions: mentions
+                .iter()
+                .map(|value| t(value))
+                .collect::<Result<_, _>>()?,
+            fire_id: t_opt(fire_id)?,
         }),
         SendDm { to, text } => Ok(SendDm {
             to: t(to)?,
@@ -527,7 +537,12 @@ pub async fn dispatch_action(
     use ActionDef::*;
 
     match action {
-        SendMessage { text, channel } => {
+        SendMessage {
+            text,
+            channel,
+            mentions,
+            fire_id,
+        } => {
             // Look up workflow metadata for destination validation and
             // attribution, scoped to the run's community — the same run/workflow
             // UUID may exist in another community, so a bare-id lookup could
@@ -567,7 +582,14 @@ pub async fn dispatch_action(
 
             let event_id = engine
                 .action_sink()?
-                .send_message(community_id, &channel_id, text, &owner_pubkey_hex)
+                .send_message(
+                    community_id,
+                    &channel_id,
+                    text,
+                    &owner_pubkey_hex,
+                    mentions,
+                    fire_id.as_deref(),
+                )
                 .await
                 .map_err(WorkflowError::from)?;
 

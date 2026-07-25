@@ -9,7 +9,22 @@ import {
 } from "nostr-tools";
 import * as nip44 from "nostr-tools/nip44";
 
-import { createRpcHandler } from "./bridge.mjs";
+import { createRpcHandler, serviceHeaders } from "./bridge.mjs";
+
+test("service authentication binds body, audience, path, and request ID", () => {
+  const headers = serviceHeaders({
+    secret: "s".repeat(32),
+    audience: `teams-identity-bridge:${"a".repeat(64)}`,
+    method: "POST",
+    url: "https://app.ecombrain.io/api/internal/teams/identity/rpc",
+    body: '{"method":"connect"}',
+    now: 1_700_000_000_000,
+    requestId: "11111111-1111-4111-8111-111111111111",
+  });
+  assert.match(headers.Authorization, /^Teams-HMAC [0-9a-f]{64}$/);
+  assert.equal(headers["X-Teams-Service-Audience"], `teams-identity-bridge:${"a".repeat(64)}`);
+  assert.equal(headers["X-Teams-Service-Body-Sha256"].length, 64);
+});
 
 function requestEvent(clientSecret, bunkerPubkey, request, createdAt = 1_700_000_000) {
   const conversationKey = nip44.v2.utils.getConversationKey(

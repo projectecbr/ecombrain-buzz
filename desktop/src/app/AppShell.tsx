@@ -88,7 +88,7 @@ import { SidebarInset, SidebarProvider } from "@/shared/ui/sidebar";
 import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 
-const IS_WEB = import.meta.env.VITE_PLATFORM === "web";
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 const LazySettingsScreen = React.lazy(async () => {
   const module = await import("@/features/settings/ui/SettingsScreen");

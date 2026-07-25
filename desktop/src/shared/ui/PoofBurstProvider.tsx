@@ -5,7 +5,7 @@ export const POOF_ORIGIN_CLASS = "buzz-poof-origin";
 
 export const POOF_DURATION_MS = 430;
 
-const PUBLIC_BASE = import.meta.env.VITE_PLATFORM === "web" ? "/teams" : "";
+const PUBLIC_BASE = import.meta.env?.VITE_PLATFORM === "web" ? "/teams" : "";
 const POOF_SOUND_URL = `${PUBLIC_BASE}/pow/plop.m4a`;
 const POOF_SIZE_SCALE = 0.6375;
 const POOF_FRAMES = [

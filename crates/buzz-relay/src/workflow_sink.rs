@@ -47,10 +47,14 @@ impl ActionSink for RelayActionSink {
         channel_id: &str,
         text: &str,
         author_pubkey: &str,
+        mentions: &[String],
+        fire_id: Option<&str>,
     ) -> Pin<Box<dyn Future<Output = Result<String, ActionSinkError>> + Send + '_>> {
         let channel_id = channel_id.to_owned();
         let text = text.to_owned();
         let author_pubkey = author_pubkey.to_owned();
+        let mentions = mentions.to_vec();
+        let fire_id = fire_id.map(str::to_owned);
 
         Box::pin(async move {
             // 0. Upgrade weak reference — fails only during shutdown.
@@ -126,7 +130,12 @@ impl ActionSink for RelayActionSink {
             //    - `p` tag attributes the message to the workflow owner
             //    - `h` tag scopes to the channel (NIP-29, canonical UUID)
             //    - `buzz:workflow` tag prevents recursive workflow triggering
-            let tags = vec![
+            if mentions.len() > 5 {
+                return Err(ActionSinkError::InvalidInput(
+                    "workflow message has more than 5 mentions".into(),
+                ));
+            }
+            let mut tags = vec![
                 Tag::parse(["p", &author_pubkey_hex])
                     .map_err(|e| ActionSinkError::EventBuild(format!("p tag: {e}")))?,
                 Tag::parse(["h", &channel_id_canonical])
@@ -134,6 +143,26 @@ impl ActionSink for RelayActionSink {
                 Tag::parse(["buzz:workflow", "true"])
                     .map_err(|e| ActionSinkError::EventBuild(format!("workflow tag: {e}")))?,
             ];
+            for mention in mentions {
+                let pubkey = nostr::PublicKey::from_hex(&mention).map_err(|e| {
+                    ActionSinkError::InvalidInput(format!("invalid mention pubkey: {e}"))
+                })?;
+                tags.push(
+                    Tag::parse(["p", &pubkey.to_hex()])
+                        .map_err(|e| ActionSinkError::EventBuild(format!("mention tag: {e}")))?,
+                );
+            }
+            if let Some(fire_id) = fire_id {
+                if fire_id.len() != 64 || !fire_id.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                    return Err(ActionSinkError::InvalidInput(
+                        "workflow fire ID must be 64 hex characters".into(),
+                    ));
+                }
+                tags.push(
+                    Tag::parse(["ecombrain-fire", &fire_id.to_ascii_lowercase()])
+                        .map_err(|e| ActionSinkError::EventBuild(format!("fire tag: {e}")))?,
+                );
+            }
 
             let kind = Kind::from(KIND_STREAM_MESSAGE as u16);
             let event = EventBuilder::new(kind, &text)
