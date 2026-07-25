@@ -318,6 +318,9 @@ async function cmdProvision(sk) {
   const ownerHex = getPublicKey(sk);
   const run1 = await provisionCommunity(TENANT_1, sk, ownerHex);
   console.log(`run1 http=${run1.status} body=${JSON.stringify(run1.json)}`);
+  // NIP-98 has no nonce: identical request within the same second => identical
+  // event id => relay replay guard fires. Space the two runs across a second.
+  await new Promise((r) => setTimeout(r, 1100));
   const run2 = await provisionCommunity(TENANT_1, sk, ownerHex);
   console.log(`run2 http=${run2.status} body=${JSON.stringify(run2.json)}`);
   const ok1 = run1.status === 200 && ['created', 'existed'].includes(run1.json.status);
