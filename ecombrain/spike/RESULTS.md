@@ -59,6 +59,13 @@ Relay image `ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0` run locally with `s
    thumbnails/transcodes were desktop-native (`commands/media_transcode.rs`, not ported).
    Buzz-Web consequence: mp4-only uploads (clean rejection otherwise) + client-side poster
    capture (canvas) or no video thumbnails in v1 — decision recorded in Phase 2 Task 4b.
+10. **Owner directive 2026-07-25 (Yannis): CLOUDFLARE IS THE LAST STEP.** All CF deploy legs
+   (Phase 0 A1 soak, staging deploy, production) are deferred until every CF-free workstream is
+   done; if CF is a real blocker at that point the run STOPS and reports — no workarounds, no
+   purchases. R2 was activated by the business partner (payment method added); the Workers Paid
+   upgrade was NOT completed — an Upgrade click reached the checkout page only, never confirmed,
+   no charge, account still on Free as of this note. The $5/mo upgrade + everything else CF-side
+   waits for explicit owner/partner action at the end.
 
 ## Local baseline (Task 2) — PASS
 - Toolchain: Hermit → Rust 1.95.0, Node 24.14.0, just 1.46.0.
