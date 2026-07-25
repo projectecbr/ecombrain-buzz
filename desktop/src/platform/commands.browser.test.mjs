@@ -2,6 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createBrowserCommands } from "./commands.browser.ts";
+import { defaultRelayWsUrl } from "./commands/context.ts";
+
+test("same-origin relay stays under the authenticated Teams path", () => {
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: { location: { protocol: "https:", host: "app.ecombrain.io" } },
+  });
+
+  try {
+    assert.equal(defaultRelayWsUrl(), "wss://app.ecombrain.io/teams/relay");
+  } finally {
+    if (previousWindow) {
+      Object.defineProperty(globalThis, "window", previousWindow);
+    } else {
+      delete globalThis.window;
+    }
+  }
+});
 
 test("send_channel_message rejects caller-selected event kinds", async () => {
   let signed = false;

@@ -1,0 +1,14 @@
+{
+  "name": "ecombrain-teams-identity-bridge",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node bridge.mjs",
+    "test": "node --test bridge.test.mjs"
+  },
+  "dependencies": {
+    "nostr-tools": "2.24.1",
+    "ws": "8.21.1"
+  }
+}
