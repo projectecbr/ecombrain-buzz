@@ -97,6 +97,12 @@ pub enum ActionDef {
         /// Optional channel UUID override. Must be a valid UUID string.
         #[serde(default)]
         channel: Option<String>,
+        /// Explicit agent pubkeys to mention with Nostr `p` tags.
+        #[serde(default)]
+        mentions: Vec<String>,
+        /// Optional deterministic scheduler firing ID (`ecombrain-fire` tag).
+        #[serde(default)]
+        fire_id: Option<String>,
     },
     /// Send a direct message to a user.
     SendDm {
@@ -874,5 +880,25 @@ mod tests {
             trigger,
             TriggerDef::DiffPosted { filter: Some(_) }
         ));
+    }
+
+    #[test]
+    fn scheduled_message_keeps_explicit_mentions_and_fire_id() {
+        let yaml = concat!(
+            "name: Check-in\ntrigger:\n  on: webhook\nsteps:\n",
+            "  - id: request\n    action: send_message\n    text: check in\n",
+            "    mentions:\n      - '{{trigger.leadAgentPubkey}}'\n",
+            "    fire_id: '{{trigger.fireId}}'\n",
+        );
+        let (def, _) = parse_yaml(yaml).expect("scheduled workflow should parse");
+        match &def.steps[0].action {
+            ActionDef::SendMessage {
+                mentions, fire_id, ..
+            } => {
+                assert_eq!(mentions, &["{{trigger.leadAgentPubkey}}"]);
+                assert_eq!(fire_id.as_deref(), Some("{{trigger.fireId}}"));
+            }
+            other => panic!("unexpected action: {other:?}"),
+        }
     }
 }

@@ -27,7 +27,7 @@ import { createLocalKeySigner } from "../../desktop/src/platform/signer.localkey
 const BASE_URL = "http://localhost:3335";
 
 const signer = createLocalKeySigner();
-const commands = createBrowserCommands({ signer, baseUrl: BASE_URL });
+const commands = createBrowserCommands({ signer, baseUrl: BASE_URL, bindRoomFn: async () => {} });
 
 const call = (command, args) => commands.call(command, args);
 const nowSecs = () => Math.floor(Date.now() / 1000);

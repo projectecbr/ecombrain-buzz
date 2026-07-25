@@ -44,6 +44,8 @@ export type BrowserCommandsOptions = {
   baseUrl?: string;
   /** fetch implementation. Default: `globalThis.fetch`. */
   fetchFn?: typeof fetch;
+  /** Product room-binding seam for relay contract tests. */
+  bindRoomFn?: (roomId: string) => Promise<void>;
 };
 
 /** Untyped invoke args, narrowed per command inside each handler. */
@@ -236,6 +238,8 @@ export type RelayContext = {
   relayQueryAll(filter: Record<string, unknown>): Promise<RelayEvent[]>;
   /** Mirror of `submit_event`: sign via the platform signer, POST /events. */
   submitEvent(input: SignEventInput): Promise<SubmitEventResponse>;
+  /** Bind a newly generated room UUID to the session-derived product store. */
+  bindRoom(roomId: string): Promise<void>;
   /** Mirror of `parse_command_response` ("response:{json}" or raw JSON). */
   parseCommandResponse<T>(message: string): T;
   myPubkey(): Promise<string>;
@@ -331,6 +335,19 @@ export function createRelayContext(
     return relayPost<RelayEvent[]>("/query", JSON.stringify(filters));
   }
 
+  async function bindRoom(roomId: string): Promise<void> {
+    if (options.bindRoomFn) return options.bindRoomFn(roomId);
+    const response = await fetchFn("/teams/api/rooms/bind", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ roomId }),
+    });
+    if (!response.ok) {
+      throw new Error("failed to bind channel to the active EcomBrain store");
+    }
+  }
+
   async function relayQueryOrEmpty(
     filters: Array<Record<string, unknown>>,
   ): Promise<RelayEvent[]> {
@@ -404,6 +421,7 @@ export function createRelayContext(
     relayQueryOrEmpty,
     relayQueryAll,
     submitEvent,
+    bindRoom,
     parseCommandResponse,
     myPubkey,
   };

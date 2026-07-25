@@ -1,0 +1,11 @@
+name: EcomBrain scheduled team check-in
+description: Ask the configured team lead for a scheduled check-in.
+trigger:
+  on: webhook
+steps:
+  - id: request_checkin
+    action: send_message
+    text: 'Scheduled EcomBrain check-in for {{trigger.scheduledFor}}'
+    mentions:
+      - '{{trigger.leadAgentPubkey}}'
+    fire_id: '{{trigger.fireId}}'
