@@ -78,12 +78,14 @@ test("channels: get_channels lists the created channel as a member channel", asy
 });
 
 test("channels: get_channel_details returns ChannelDetailInfo", async () => {
-  const myPubkey = await signer.getPublicKey();
   const detail = await call("get_channel_details", { channelId });
 
   assert.equal(detail.id, channelId);
   assert.equal(detail.name, `cmd-${RUN}`);
-  assert.equal(detail.created_by, myPubkey);
+  // created_by is the kind:39000 event's pubkey. The relay synthesizes the
+  // metadata event itself, so this is the relay's pubkey, not the creator's —
+  // same as the Rust `channel_detail_from_event` (event.pubkey).
+  assert.match(detail.created_by, /^[0-9a-f]{64}$/);
   assert.match(detail.created_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   assert.match(detail.updated_at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
   assert.equal(detail.topic_set_by, null);

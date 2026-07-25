@@ -7,8 +7,8 @@
 // platform implementation into the wrong bundle graph.
 //
 // Tasks 2–4 wire the real implementations (browser WebSocket transport,
-// nostr-tools/NIP-46 signer, NIP-98 REST commands, browser media). Until
-// then every factory throws `not wired yet`.
+// nostr-tools/NIP-46 signer, NIP-98 REST commands, browser media). The
+// media factory is the last one still throwing `not wired yet`.
 
 import type {
   PlatformCommands,
@@ -123,9 +123,35 @@ export function getSigner(): PlatformSigner {
   return signerProxy;
 }
 
-/** Adapter C — invoke command surface. Wired in Task 4. */
+/** Adapter C — invoke command surface. Wired in Task 4.
+ *
+ * Same lazy sync-proxy pattern as getTransport()/getSigner() above: the
+ * static `import.meta.env.VITE_PLATFORM` branch lets the minifier drop
+ * commands.tauri (with its `@tauri-apps/api` invoke) from dist-web and the
+ * NIP-98 REST implementation from the desktop bundle. `invokeTauri`
+ * (tauri.ts) delegates here, so every `tauri*.ts` proxy routes through this
+ * seam with no call-site changes. */
+let commandsImplPromise: Promise<PlatformCommands> | null = null;
+let commandsProxy: PlatformCommands | null = null;
+
+function loadCommandsImpl(): Promise<PlatformCommands> {
+  if (!commandsImplPromise) {
+    commandsImplPromise =
+      import.meta.env?.VITE_PLATFORM === "web"
+        ? import("./commands.browser").then((m) => m.createBrowserCommands())
+        : import("./commands.tauri").then((m) => m.createTauriCommands());
+  }
+  return commandsImplPromise;
+}
+
 export function getCommands(): PlatformCommands {
-  return notWired("commands");
+  if (!commandsProxy) {
+    commandsProxy = {
+      call: <T>(command: string, args?: unknown): Promise<T> =>
+        loadCommandsImpl().then((impl) => impl.call<T>(command, args)),
+    };
+  }
+  return commandsProxy;
 }
 
 /** Media seam — upload/download/clipboard/URL resolution. Wired in Task 4. */

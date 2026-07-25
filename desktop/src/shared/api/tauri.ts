@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { getCommands } from "@/platform";
 import {
   activateRateLimit,
   parseRateLimitHint,
@@ -303,7 +303,7 @@ export async function invokeTauri<T>(
   args?: Record<string, unknown>,
 ): Promise<T> {
   try {
-    return await tauriInvoke<T>(command, args);
+    return await getCommands().call<T>(command, args);
   } catch (error) {
     const err = toTauriError(error);
     // Rust emits `relay rate-limited:` for HTTP 429 responses. Activate the
