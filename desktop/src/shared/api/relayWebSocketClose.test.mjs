@@ -1,23 +1,54 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { closeAllWebSockets, closeWebSocket } from "./relayWebSocketClose.ts";
+import { createTauriTransport } from "../../platform/transport.tauri.ts";
+import { closeAllWebSockets } from "./relayWebSocketClose.ts";
 
-test("closeWebSocket invokes authoritative native disconnect", async () => {
+test("transport.close invokes the owned native disconnect", async () => {
   const calls = [];
-  await closeWebSocket(42, "community switch", async (cmd, args) => {
-    calls.push({ cmd, args });
+  const transport = createTauriTransport({
+    invokeFn: async (cmd, args) => {
+      calls.push({ cmd, args });
+    },
   });
+
+  transport.close({ id: 42 }, "community switch");
+  await new Promise((resolve) => setTimeout(resolve, 0));
 
   assert.deepEqual(calls, [
     { cmd: "plugin:websocket|disconnect", args: { id: 42 } },
   ]);
 });
 
-test("closeWebSocket is idempotent when the native socket is gone", async () => {
-  await closeWebSocket(7, "connection reset", async () => {
-    throw new Error("WebSocket connection not found");
+test("transport.close is idempotent when the native socket is gone", async () => {
+  const transport = createTauriTransport({
+    invokeFn: async () => {
+      throw new Error("WebSocket connection not found");
+    },
   });
+  transport.close({ id: 7 }, "connection reset");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+});
+
+test("transport.send sends a Text frame through the native socket", async () => {
+  const calls = [];
+  const transport = createTauriTransport({
+    invokeFn: async (cmd, args) => {
+      calls.push({ cmd, args });
+    },
+  });
+
+  await transport.send({ id: 9 }, '["REQ","s",{}]');
+
+  assert.deepEqual(calls, [
+    {
+      cmd: "plugin:websocket|send",
+      args: {
+        id: 9,
+        message: { type: "Text", data: '["REQ","s",{}]' },
+      },
+    },
+  ]);
 });
 
 test("closeAllWebSockets invokes native process-wide teardown", async () => {

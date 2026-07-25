@@ -1,21 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 
+import { getTransport } from "@/platform";
+
 /**
- * Remove the connection from the native manager before waiting for its socket
- * task to stop. The command is bounded and idempotent; failures mean the
- * process is already tearing down or the socket is already gone.
+ * Close a relay WebSocket through the platform transport seam (Adapter A).
+ *
+ * Tauri uses Buzz's owned, bounded native disconnect command. Web uses
+ * `WebSocket.close(1000, reason)`. Both swallow already-gone socket errors.
  */
-export function closeWebSocket(
-  id: number,
-  reason: string,
-  invokeFn: typeof invoke = invoke,
-): Promise<void> {
-  return invokeFn("plugin:websocket|disconnect", { id }).then(
-    () => undefined,
-    (err) => {
-      console.debug(`closeWebSocket(${id}, ${reason}) rejected:`, err);
-    },
-  );
+export function closeWebSocket(id: number, reason: string): void {
+  getTransport().close({ id }, reason);
 }
 
 export function closeAllWebSockets(

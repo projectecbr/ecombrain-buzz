@@ -1,5 +1,4 @@
-import { Channel, invoke } from "@tauri-apps/api/core";
-
+import { getTransport, type TransportHandle } from "@/platform";
 import { createAuthEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -34,8 +33,7 @@ type PendingPublish = {
  * disconnect as soon as their polling batch finishes.
  */
 export class ReadOnlyRelayClient {
-  private wsId: number | null = null;
-  private onMessageChannel: Channel<unknown> | null = null;
+  private wsHandle: TransportHandle | null = null;
   private connectPromise: Promise<void> | null = null;
   private authRequest: {
     pendingEventId: string;
@@ -54,7 +52,7 @@ export class ReadOnlyRelayClient {
   }
 
   async connect(): Promise<void> {
-    if (this.wsId !== null) return;
+    if (this.wsHandle !== null) return;
     if (this.connectPromise) return this.connectPromise;
 
     const promise = this.openConnection();
@@ -72,9 +70,9 @@ export class ReadOnlyRelayClient {
     const error = new Error("Read-only relay observer disconnected.");
     this.generation++;
 
-    if (this.wsId !== null) {
-      void closeWebSocket(this.wsId, "observer disconnected");
-      this.wsId = null;
+    if (this.wsHandle !== null) {
+      closeWebSocket(this.wsHandle.id, "observer disconnected");
+      this.wsHandle = null;
     }
 
     if (this.authRequest) {
@@ -95,7 +93,6 @@ export class ReadOnlyRelayClient {
       this.publishes.delete(eventId);
     }
 
-    this.onMessageChannel = null;
     this.connectPromise = null;
   }
 
@@ -106,7 +103,7 @@ export class ReadOnlyRelayClient {
 
   async publishEvent(event: RelayEvent): Promise<void> {
     await this.connect();
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       throw new Error("Read-only relay socket is not connected.");
     }
 
@@ -132,15 +129,12 @@ export class ReadOnlyRelayClient {
 
   private async openConnection(): Promise<void> {
     const generation = ++this.generation;
-    this.onMessageChannel = new Channel<unknown>((message) => {
-      void this.handleWsMessage(message, generation);
-    });
-
-    this.wsId = await invoke<number>("plugin:websocket|connect", {
-      url: this.relayUrl,
-      onMessage: this.onMessageChannel,
-      config: {},
-    });
+    this.wsHandle = await getTransport().connect(
+      this.relayUrl,
+      (_handle, message) => {
+        void this.handleWsMessage(message, generation);
+      },
+    );
 
     await new Promise<void>((resolve, reject) => {
       const timeout = window.setTimeout(() => {
@@ -161,7 +155,7 @@ export class ReadOnlyRelayClient {
   private requestHistory(
     filter: RelaySubscriptionFilter,
   ): Promise<RelayEvent[]> {
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       return Promise.reject(
         new Error("Read-only relay socket is not connected."),
       );
@@ -190,17 +184,11 @@ export class ReadOnlyRelayClient {
   }
 
   private async sendRaw(payload: unknown[]): Promise<void> {
-    if (this.wsId === null) {
+    if (this.wsHandle === null) {
       throw new Error("Read-only relay socket is not connected.");
     }
 
-    await invoke("plugin:websocket|send", {
-      id: this.wsId,
-      message: {
-        type: "Text",
-        data: JSON.stringify(payload),
-      },
-    });
+    await getTransport().send(this.wsHandle, JSON.stringify(payload));
   }
 
   private async handleWsMessage(

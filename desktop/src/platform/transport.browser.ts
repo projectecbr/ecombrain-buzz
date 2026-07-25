@@ -14,11 +14,7 @@
 // in ecombrain/contract-tests passes the `ws` package), defaulting to
 // globalThis.WebSocket in the browser bundle.
 
-import type {
-  PlatformTransport,
-  TransportHandle,
-  TransportMessage,
-} from "./types";
+import type { PlatformTransport, TransportHandle } from "./types";
 
 /** Minimal structural subset of the DOM WebSocket used by this adapter. */
 export type WebSocketLike = {

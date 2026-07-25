@@ -26,6 +26,7 @@ export type {
   PlatformTransport,
   SignEventInput,
   TransportHandle,
+  TransportMessage,
   UploadResult,
 } from "./types";
 
@@ -54,8 +55,41 @@ function notWired(adapter: string): never {
 }
 
 /** Adapter A — relay WebSocket transport. Wired in Task 2. */
+//
+// Lazy sync accessor: the real adapter is loaded via dynamic import behind a
+// cached promise, so importing this module never pulls an implementation into
+// the wrong bundle graph. The branch reads `import.meta.env.VITE_PLATFORM`
+// directly (not getPlatform()) so the web build's define lets the minifier
+// fold the tauri branch away — `plugin:websocket` never reaches dist-web, and
+// the browser shim never reaches the desktop bundle. Correctness of the lazy
+// proxy relies on connect() always preceding send()/close(), which is how
+// both relay clients already drive the transport.
+let transportImplPromise: Promise<PlatformTransport> | null = null;
+let transportProxy: PlatformTransport | null = null;
+
+function loadTransportImpl(): Promise<PlatformTransport> {
+  if (!transportImplPromise) {
+    transportImplPromise =
+      import.meta.env?.VITE_PLATFORM === "web"
+        ? import("./transport.browser").then((m) => m.createBrowserTransport())
+        : import("./transport.tauri").then((m) => m.createTauriTransport());
+  }
+  return transportImplPromise;
+}
+
 export function getTransport(): PlatformTransport {
-  return notWired("transport");
+  if (!transportProxy) {
+    transportProxy = {
+      connect: (url, onMessage) =>
+        loadTransportImpl().then((impl) => impl.connect(url, onMessage)),
+      send: (handle, frame) =>
+        loadTransportImpl().then((impl) => impl.send(handle, frame)),
+      close: (handle, reason) => {
+        void loadTransportImpl().then((impl) => impl.close(handle, reason));
+      },
+    };
+  }
+  return transportProxy;
 }
 
 /** Adapter B — identity & signing. Wired in Task 3. */
