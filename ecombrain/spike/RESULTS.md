@@ -30,5 +30,30 @@ Status: IN PROGRESS — A1/A3/A6 blocked on CF billing (see GO-NOGO.md), local e
 6. **Supabase direct host is IPv6-only** — container path is the session pooler (see A4).
 7. **Local dev ports**: host brew postgres/redis occupy 5432/6379 → Buzz dev remapped to 6432/6479 (branch-local).
 
-## Local baseline (Task 2)
-- pending: build/test results appended here.
+## Local baseline (Task 2) — PASS
+- Toolchain: Hermit → Rust 1.95.0, Node 24.14.0, just 1.46.0.
+- `just setup`: compose services up (postgres:17 on 6432, redis:7 on 6479, minio on 9000/9001;
+  keycloak unhealthy — verified unused; prometheus bind-mount failed, /Volumes not mounted into the
+  Colima VM — irrelevant to the spike, noted for Phase 1 if local monitoring is wanted).
+  minio-init had not created `buzz-media` (first setup run died on the creds-helper bug); created
+  manually via `mc` — relay's git object-store conformance probe then passed (2 transport drops in
+  96 race ops under local MinIO; probe still admitted the backend).
+- Relay runs on **port 3333**, not 3000: canonical EcomBrain next-server owns :3000 (pid 19961,
+  cwd = canonical checkout — left untouched per repo rules). `.env`: BUZZ_BIND_ADDR/RELAY_URL updated.
+- Roundtrip: `buzz-cli` channel create → message send → messages get — event accepted and read back
+  (event id a2e6d12b…0477, kind 9). Proves WS/REST + Postgres + Redis + MinIO path.
+- Unit tests `just test-unit`: **ALL PASS** at the pin (buzz-core, buzz-auth, buzz-db, buzz-conformance).
+
+## Relay image (Task 3) — PASS (mirror variant)
+- Deploying the UNPATCHED relay ⇒ upstream's official multi-arch image is bit-identical to anything
+  we would build: mirrored `ghcr.io/block/buzz:0.2.0` → **`ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0`**
+  (+ `:relay-v0.2.0` alias) via `.github/workflows/mirror-relay-image.yml` (Actions GITHUB_TOKEN —
+  no PAT needed; local gh token lacks `write:packages`, no GitHub web session exists in Chrome).
+- Package is **private** by default → Task 5 must either make it public or configure CF Containers
+  registry credentials (OPEN ITEM).
+- Inherited upstream workflows (docker.yml, ci.yml, release.yml, helm-chart.yml, benchmark, sprig,
+  auto-tag) **disabled on the fork** to prevent accidental publishes; re-enable ci.yml when the
+  fork-sync conformance gate is built (Phase 1).
+- Image smoke (Step 3): amd64 image under qemu on Colima, env → compose postgres/redis/minio via
+  host.docker.internal, boots, passes its own A3 git conformance probe, readiness OK, and a full
+  `buzz-cli` channel+message roundtrip against the container (event 029a63ea…0a79c).
