@@ -27,6 +27,12 @@ export default defineConfig(async () => ({
   ],
   resolve: {
     alias: {
+      // E2E mocks target the Tauri runtime only; keep the mock invoke surface
+      // (incl. `plugin:websocket|*` strings) out of the web bundle.
+      "@/testing/e2eBridge": path.resolve(
+        __dirname,
+        "src/testing/e2eBridge.web-stub.ts",
+      ),
       "@": "/src",
       "@features-manifest": path.resolve(__dirname, "../preview-features.json"),
     },
