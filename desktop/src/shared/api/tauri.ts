@@ -650,23 +650,9 @@ export async function removeReaction(
   await invokeTauri("remove_reaction", { eventId, emoji });
 }
 
-export async function signRelayEvent(input: {
-  kind: number;
-  content: string;
-  createdAt?: number;
-  tags: string[][];
-}): Promise<RelayEvent> {
-  const eventJson = await invokeTauri<string>("sign_event", input);
-  return JSON.parse(eventJson) as RelayEvent;
-}
-
-export async function createAuthEvent(input: {
-  challenge: string;
-  relayUrl: string;
-}): Promise<RelayEvent> {
-  const eventJson = await invokeTauri<string>("create_auth_event", input);
-  return JSON.parse(eventJson) as RelayEvent;
-}
+// signRelayEvent / createAuthEvent live in relaySigning.ts (Adapter B seam,
+// file-size split); re-exported so existing call sites keep their import.
+export { createAuthEvent, signRelayEvent } from "@/shared/api/relaySigning";
 
 function fromRawRelayAgent(agent: RawRelayAgent): RelayAgent {
   return {

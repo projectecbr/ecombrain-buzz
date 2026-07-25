@@ -93,8 +93,34 @@ export function getTransport(): PlatformTransport {
 }
 
 /** Adapter B — identity & signing. Wired in Task 3. */
+//
+// Same lazy sync-proxy pattern as getTransport() above: the static
+// `import.meta.env.VITE_PLATFORM` branch lets the minifier drop the tauri
+// chunk (with its `sign_event` invoke) from dist-web and the localkey dev
+// signer from the desktop bundle. signer.bunker.ts (Phase 4, NIP-46) is
+// deliberately not referenced here so it stays out of both bundles.
+let signerImplPromise: Promise<PlatformSigner> | null = null;
+let signerProxy: PlatformSigner | null = null;
+
+function loadSignerImpl(): Promise<PlatformSigner> {
+  if (!signerImplPromise) {
+    signerImplPromise =
+      import.meta.env?.VITE_PLATFORM === "web"
+        ? import("./signer.localkey").then((m) => m.createLocalKeySigner())
+        : import("./signer.tauri").then((m) => m.createTauriSigner());
+  }
+  return signerImplPromise;
+}
+
 export function getSigner(): PlatformSigner {
-  return notWired("signer");
+  if (!signerProxy) {
+    signerProxy = {
+      getPublicKey: () => loadSignerImpl().then((impl) => impl.getPublicKey()),
+      signEvent: (input) =>
+        loadSignerImpl().then((impl) => impl.signEvent(input)),
+    };
+  }
+  return signerProxy;
 }
 
 /** Adapter C — invoke command surface. Wired in Task 4. */

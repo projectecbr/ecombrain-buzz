@@ -37,8 +37,17 @@ test("getTransport_returnsLazyAdapterWithoutLoadingImpl", () => {
   assert.equal(typeof transport.close, "function");
 });
 
-test("platformFactories_signerCommandsMediaStillThrowNotWiredYet", () => {
-  const factories = { getSigner, getCommands, getMedia };
+test("getSigner_returnsLazyAdapterWithoutLoadingImpl", () => {
+  // Wired in Task 3: returns a lazy proxy synchronously; the real adapter
+  // (tauri sign_event or localkey dev signer) loads on first use via dynamic
+  // import.
+  const signer = getSigner();
+  assert.equal(typeof signer.getPublicKey, "function");
+  assert.equal(typeof signer.signEvent, "function");
+});
+
+test("platformFactories_commandsMediaStillThrowNotWiredYet", () => {
+  const factories = { getCommands, getMedia };
   for (const [name, factory] of Object.entries(factories)) {
     assert.equal(typeof factory, "function", `${name} must be exported`);
     assert.throws(() => factory(), /not wired yet/, `${name} must throw`);

@@ -73,4 +73,58 @@ Test evidence:
   e2eBridge stubbed).
 
 Note: the app still crashes on web past the transport — `invokeTauri` (Adapter C),
-signing (Adapter B), boot-time Tauri glue (item 5) are Tasks 3–5.
+boot-time Tauri glue (item 5) are Tasks 4–5.
+
+## Task 3 state: Adapter B (identity/signing) wired, contract-tested against local relay (2026-07-25)
+
+What changed:
+- `desktop/src/platform/signer.localkey.ts` (new) — PlatformSigner over
+  nostr-tools (`generateSecretKey`/`finalizeEvent`/`getPublicKey`). DEV-ONLY:
+  key held in module memory + sessionStorage under
+  `ecombrain-teams-dev-identity` (deliberately NOT `buzz-*`). `created_at`
+  override supported; `getPublicKey` deterministic per session. Phase 4
+  replaces it with the NIP-46 bunker.
+- `desktop/src/platform/signer.tauri.ts` (new) — the existing `sign_event`
+  invoke behind PlatformSigner, same camelCase args + JSON.parse as the old
+  `signRelayEvent` body; `getPublicKey` via `get_identity`. Zero behavior
+  change. `invokeFn` injectable.
+- `desktop/src/platform/signer.bunker.ts` (new) — PlatformSigner STUB over
+  the nostr-tools BunkerSigner shape; constructor takes a bunker URI, methods
+  throw `PHASE-4: bunker not available`. NOT exported from index.ts — out of
+  both bundles (verified by grep below).
+- `desktop/src/platform/index.ts` — `getSigner()` wired with the Task 2 lazy
+  static-branch pattern (minifier drops signer.tauri from dist-web,
+  signer.localkey from the desktop bundle).
+- `shared/api/relaySigning.ts` (new) + `shared/api/tauri.ts` — `signRelayEvent`
+  delegates to `getSigner().signEvent` (signature/return identical; all 32
+  call sites untouched). `createAuthEvent` now builds its kind:22242
+  relay+challenge event through `signRelayEvent` instead of the
+  `create_auth_event` invoke — the Rust command built exactly that event with
+  the same key, so desktop behavior is identical and the NIP-42 path
+  (relayClientSession.ts:763 `handleAuthChallenge`, readOnlyRelayClient.ts:250)
+  works on web unchanged. Both functions live in the new `relaySigning.ts`
+  (tauri.ts was at its file-size budget) and are re-exported from tauri.ts,
+  so no import site changed.
+- `shared/api/tauriIdentity.ts` — web branch: `getIdentity()` returns the
+  localkey dev identity shaped like Rust `get_identity` (pubkey +
+  npub-truncated displayName, lost/locked false); `getNsec()` throws (private
+  keys never in the browser beyond the dev signer); `importIdentity` /
+  `persistCurrentIdentity` are console.info no-ops returning the dev identity.
+- `ecombrain/contract-tests/signer.test.mjs` (new) — kind 1 sign + local
+  `verifyEvent`, then NIP-42 kind:22242 against ws://localhost:3335 accepted
+  (`["OK", id, true]`). Failed pre-implementation (ERR_MODULE_NOT_FOUND),
+  passes after.
+- `src/platform/signer.localkey.test.mjs` (new, 5 tests);
+  `platform.test.mjs` updated to the wired seam.
+
+Test evidence:
+- Contract tests: 3/3 pass (2 signer + 1 transport),
+  `cd ecombrain/contract-tests && npm test`.
+- `pnpm typecheck` (desktop): CLEAN, zero errors.
+- `pnpm test` (desktop node tests): 2484 pass, 0 fail (2478 baseline + 6 new).
+- `pnpm vite build` (desktop): ✓ built in 5.41s; lazy `signer.tauri-*.js`
+  chunk carries `sign_event`; no localkey/bunker code in dist.
+- `pnpm vite build --config vite.web.config.ts` (web): ✓ built in 3.96s;
+  `grep -r "sign_event" dist-web/` → 0, `grep -r "create_auth_event"
+  dist-web/` → 0, only `signer.localkey-*.js` chunk present,
+  `grep -r "PHASE-4: bunker" dist/ dist-web/` → 0.
