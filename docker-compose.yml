@@ -10,7 +10,8 @@ services:
       POSTGRES_DB: buzz
       PGDATA: /var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      # EcomBrain spike: remapped 5432->6432 (brew postgresql@15 occupies 5432 on this host)
+      - "6432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:
@@ -34,7 +35,8 @@ services:
     image: redis:7-alpine
     container_name: buzz-redis
     ports:
-      - "6379:6379"
+      # EcomBrain spike: remapped 6379->6479 (brew redis occupies 6379 on this host)
+      - "6479:6379"
     networks:
       - buzz-net
     healthcheck:
