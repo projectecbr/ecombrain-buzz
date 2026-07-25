@@ -1,41 +1,16 @@
-import fs from "node:fs";
 import path from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig, mergeConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 
-// The HTML output keeps the source file's basename (`index.web.html`), but
-// `vite preview` and static hosts (incl. the Phase-7 Worker SPA fallback)
-// serve `/` from `index.html`. Copy it into place after the build.
-function emitIndexHtml(): Plugin {
-  return {
-    name: "buzz-web:emit-index-html",
-    apply: "build",
-    closeBundle() {
-      const outDir = path.resolve(__dirname, "dist-web");
-      fs.copyFileSync(
-        path.join(outDir, "index.web.html"),
-        path.join(outDir, "index.html"),
-      );
-    },
-  };
-}
-
-// Web (browser SPA) build — Phase 2 Buzz-Web port.
-//
-// Same plugins and aliases as `vite.config.ts` (TanStack Router over the same
-// routesDirectory/virtualRouteConfig, `@` and `@features-manifest` aliases),
-// but:
-//   - defines `import.meta.env.VITE_PLATFORM = "web"` so `platform/index.ts`
-//     selects the browser adapters,
-//   - emits a static bundle to `dist-web/` from `index.web.html`,
-//   - drops the entire Tauri dev-server block (fixed port, HMR-over-WS for
-//     TAURI_DEV_HOST, src-tauri watch ignore) — this config never runs under
-//     `tauri dev`.
-//
-// Build:   pnpm vite build --config vite.web.config.ts
-// Preview: pnpm vite preview --config vite.web.config.ts --port 4599
+// Web (browser) build of the desktop app — Phase 2 Buzz-Web port.
+// Same plugins/routes/aliases as vite.config.ts; no Tauri dev-server bits.
+// The platform layer reads `import.meta.env.VITE_PLATFORM` to select the
+// browser adapters (desktop/src/platform/).
 export default defineConfig(async () => ({
+  define: {
+    "import.meta.env.VITE_PLATFORM": JSON.stringify("web"),
+  },
   plugins: [
     tanstackRouter({
       target: "react",
@@ -49,16 +24,12 @@ export default defineConfig(async () => ({
       ],
     }),
     react(),
-    emitIndexHtml(),
   ],
   resolve: {
     alias: {
       "@": "/src",
       "@features-manifest": path.resolve(__dirname, "../preview-features.json"),
     },
-  },
-  define: {
-    "import.meta.env.VITE_PLATFORM": '"web"',
   },
   build: {
     outDir: "dist-web",
