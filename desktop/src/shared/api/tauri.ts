@@ -1,4 +1,4 @@
-import { getCommands } from "@/platform";
+import { getCommands, getMedia, getPlatform } from "@/platform";
 import {
   activateRateLimit,
   parseRateLimitHint,
@@ -303,6 +303,32 @@ export async function invokeTauri<T>(
   args?: Record<string, unknown>,
 ): Promise<T> {
   try {
+    if (getPlatform() === "web") {
+      const media = getMedia();
+      if (command === "pick_and_upload_media") {
+        return await (media.pickAndUpload() as Promise<T>);
+      }
+      if (command === "upload_media_bytes") {
+        return await (media.uploadBytes(
+          Uint8Array.from(args?.data as number[]),
+          args?.filename as string | undefined,
+          args?.progressId as string | undefined,
+        ) as Promise<T>);
+      }
+      if (command === "download_file" || command === "download_image") {
+        media.download(
+          args?.url as string,
+          args?.filename as string | undefined,
+        );
+        return undefined as T;
+      }
+      if (command === "copy_image_to_clipboard") {
+        return await (media.copyImage(args?.url as string) as Promise<T>);
+      }
+      if (command === "upload_media") {
+        throw new Error("filesystem-path upload is unavailable in the browser");
+      }
+    }
     return await getCommands().call<T>(command, args);
   } catch (error) {
     const err = toTauriError(error);

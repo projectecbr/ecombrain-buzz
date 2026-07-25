@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defineConfig, mergeConfig } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 
@@ -8,6 +8,7 @@ import { tanstackRouter } from "@tanstack/router-plugin/vite";
 // The platform layer reads `import.meta.env.VITE_PLATFORM` to select the
 // browser adapters (desktop/src/platform/).
 export default defineConfig(async () => ({
+  base: "/teams/",
   define: {
     "import.meta.env.VITE_PLATFORM": JSON.stringify("web"),
   },

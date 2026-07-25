@@ -54,10 +54,10 @@ test("getCommands_returnsLazyAdapterWithoutLoadingImpl", () => {
   assert.equal(typeof commands.call, "function");
 });
 
-test("platformFactories_mediaStillThrowsNotWiredYet", () => {
-  const factories = { getMedia };
-  for (const [name, factory] of Object.entries(factories)) {
-    assert.equal(typeof factory, "function", `${name} must be exported`);
-    assert.throws(() => factory(), /not wired yet/, `${name} must throw`);
-  }
+test("getMedia_returnsLazyAdapterWithoutLoadingImpl", () => {
+  const media = getMedia();
+  assert.equal(typeof media.pickAndUpload, "function");
+  assert.equal(typeof media.uploadBytes, "function");
+  assert.equal(typeof media.download, "function");
+  assert.equal(typeof media.copyImage, "function");
 });

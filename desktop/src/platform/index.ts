@@ -48,12 +48,6 @@ export function getPlatform(): PlatformKind {
   return import.meta.env?.VITE_PLATFORM === "web" ? "web" : "tauri";
 }
 
-function notWired(adapter: string): never {
-  throw new Error(
-    `platform adapter "${adapter}" is not wired yet (platform: ${getPlatform()})`,
-  );
-}
-
 /** Adapter A — relay WebSocket transport. Wired in Task 2. */
 //
 // Lazy sync accessor: the real adapter is loaded via dynamic import behind a
@@ -154,7 +148,42 @@ export function getCommands(): PlatformCommands {
   return commandsProxy;
 }
 
-/** Media seam — upload/download/clipboard/URL resolution. Wired in Task 4. */
+/** Media seam — upload/download/clipboard/URL resolution. */
+let mediaImplPromise: Promise<PlatformMedia> | null = null;
+let mediaProxy: PlatformMedia | null = null;
+
+function loadMediaImpl(): Promise<PlatformMedia> {
+  if (!mediaImplPromise) {
+    mediaImplPromise =
+      import.meta.env?.VITE_PLATFORM === "web"
+        ? import("./media.browser").then((module) =>
+            module.createBrowserMedia(),
+          )
+        : import("./media.tauri").then((module) => module.createTauriMedia());
+  }
+  return mediaImplPromise;
+}
+
 export function getMedia(): PlatformMedia {
-  return notWired("media");
+  if (!mediaProxy) {
+    mediaProxy = {
+      resolveUrl: (path) => path,
+      pickAndUpload: () =>
+        loadMediaImpl().then((implementation) =>
+          implementation.pickAndUpload(),
+        ),
+      uploadBytes: (data, filename, progressId) =>
+        loadMediaImpl().then((implementation) =>
+          implementation.uploadBytes(data, filename, progressId),
+        ),
+      download: (url, filename) => {
+        void loadMediaImpl().then((implementation) =>
+          implementation.download(url, filename),
+        );
+      },
+      copyImage: (url) =>
+        loadMediaImpl().then((implementation) => implementation.copyImage(url)),
+    };
+  }
+  return mediaProxy;
 }

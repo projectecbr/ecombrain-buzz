@@ -10,6 +10,11 @@ const MAX_LINES = 1000;
 const rules = [
   { root: "src-tauri/src", extensions: new Set([".rs"]), maxLines: MAX_LINES },
   {
+    root: "src/platform",
+    extensions: new Set([".ts", ".tsx"]),
+    maxLines: 600,
+  },
+  {
     root: "src/app",
     extensions: new Set([".ts", ".tsx"]),
     maxLines: MAX_LINES,

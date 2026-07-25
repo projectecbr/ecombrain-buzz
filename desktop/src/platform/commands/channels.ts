@@ -1,9 +1,4 @@
-// channels domain — ports of src-tauri/src/commands/channels.rs.
-//
-// Split out of commands.browser.ts in Task 4b — a mechanical move; behavior
-// is unchanged. Result shapes match the Rust command results EXACTLY
-// (snake_case JSON); the `tauri*.ts` wrappers map them to camelCase,
-// unchanged on both platforms.
+// Channel command ports with the Rust-compatible snake_case response shapes.
 
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -30,11 +25,6 @@ import {
   KIND_STREAM_MESSAGE_V2,
   KIND_UPDATE_CHANNEL,
 } from "./kinds.ts";
-
-// ── nostr_convert ports: kind:39000 / 39002 → RawChannel shapes ─────────────
-//
-// These produce the exact snake_case JSON the Rust commands return (the
-// tauri.ts wrappers map them to camelCase, unchanged).
 
 export type RawChannelInfo = {
   id: string;
