@@ -128,3 +128,87 @@ Test evidence:
   `grep -r "sign_event" dist-web/` → 0, `grep -r "create_auth_event"
   dist-web/` → 0, only `signer.localkey-*.js` chunk present,
   `grep -r "PHASE-4: bunker" dist/ dist-web/` → 0.
+
+## Task 4a state: Adapter C (commands) wired for the core domains, contract-tested against local relay (2026-07-25)
+
+Scope: `ecombrain/phase2/command-map.md` (new) inventories every invoke
+command reachable from surviving features — 34 core (Task 4a), 70 backlog
+(Task 4b, throw `not-ported-yet`), ~80 removed/excluded. The core domains
+are ported faithfully from `src-tauri/src/commands/*.rs`: config (4),
+channels (15), dms (2), messages (9), feed/search (2), canvas (2).
+
+What changed:
+- `desktop/src/platform/commands.browser.ts` (new) — PlatformCommands over
+  NIP-98-signed relay REST (`POST /query` filter-array reads, `POST /events`
+  signed-event writes). NIP-98 kind:27235 with u/method/payload/nonce tags
+  signed via `getSigner().signEvent` (never raw keys); sent unconditionally
+  even though staging has BUZZ_REQUIRE_AUTH_TOKEN=false. Ports the Rust
+  behavior exactly: `query_relay_all` 500-page until/before_id paging,
+  `channel_info/detail/members_from_event` conversions, event builders from
+  `events.rs` (kinds 9000-9022, 41010/41012, 9/45001/45003, 40003, 5, 7,
+  40100) with the same validations (64KiB content, 50 mentions, pubkey/uuid
+  checks, tag-prefix guards), thread-root resolution, keyset cursors,
+  `relay returned {status}: {message}` / `relay rejected event: {message}`
+  error strings, `response:{json}` ack parsing, RFC-3339-no-millis
+  timestamps. Relay URL resolved per call from the active workspace in
+  `buzz-workspaces` localStorage (Rust workspace-override precedence), then
+  `VITE_RELAY_URL`, then same-origin. Injectable `signer`/`baseUrl`/`fetchFn`
+  for the contract test. Kind constants are inlined (not imported from
+  `@/shared/constants/kinds`) because bare-node contract tests cannot
+  resolve the `@/` alias; relative runtime import uses explicit `.ts`.
+- `desktop/src/platform/commands.tauri.ts` (new) — passthrough to
+  `@tauri-apps/api` invoke + the `toTauriError` conversion, lifted verbatim
+  from the old `invokeTauri` body. Zero desktop behavior change; `invokeFn`
+  injectable.
+- `desktop/src/platform/index.ts` — `getCommands()` wired with the same
+  lazy static-branch pattern (minifier drops commands.tauri from dist-web,
+  commands.browser from dist).
+- `shared/api/tauri.ts` — `invokeTauri` now delegates to
+  `getCommands().call`. SEAM DECISION: rewiring the single choke point
+  inside `invokeTauri` (instead of touching every tauri*.ts proxy) is the
+  minimal-diff option — all ~72 wrappers and the domain API files
+  (channelWindow.ts etc.) keep working unchanged, and desktop behavior is
+  identical because commands.tauri reproduces the old body exactly. tauri.ts
+  no longer imports `@tauri-apps/api` at all (only a comment mention), so it
+  stays Tauri-free for the web bundle and shrinks under its size budget.
+- `platform.test.mjs` — updated to the wired seam (getCommands lazy proxy;
+  getMedia still not-wired).
+- `ecombrain/contract-tests/commands.test.mjs` (new, 8 tests) — drives
+  createBrowserCommands against http://localhost:3335: create_channel /
+  get_channels / get_channel_details shapes; send_channel_message +
+  get_channel_messages_before + get_channel_window + get_event (JSON-string
+  result); thread reply root resolution + get_thread_replies; mention →
+  get_feed, content → search_messages; open_dm → dm channel, hide_dm →
+  unlisted; `not-ported-yet` error contract. Failed pre-implementation
+  (ERR_MODULE_NOT_FOUND), passes after.
+
+Test evidence:
+- Contract tests: 11/11 pass (1 transport + 2 signer + 8 commands),
+  `cd ecombrain/contract-tests && npm test`.
+- `pnpm typecheck` (desktop): CLEAN, zero errors.
+- `pnpm test` (desktop node tests): 2485 pass, 0 fail (2484 baseline + 1
+  net new from the platform.test.mjs split).
+- `pnpm vite build` (desktop): ✓ built in 6.45s; lazy
+  `commands.tauri-*.js` chunk; `grep -r "not-ported-yet" dist/` → 0.
+- `pnpm vite build --config vite.web.config.ts` (web): ✓ built in 2.22s;
+  only `commands.browser-*.js` carries the NIP-98 code
+  (`grep -rl "not-ported-yet" dist-web/assets` → that chunk only); no
+  commands.tauri chunk in dist-web.
+
+Deviations / notes:
+- `get_channel_members` does NOT port the NIP-OA owner-tag verification
+  that sets `is_agent` from kind:0 profiles (buzz-sdk crypto verify);
+  `is_agent` comes from the membership role ("bot") only, display_name is
+  populated. Documented in command-map.md.
+- `created_by` in channel details is the relay's own pubkey (the relay
+  synthesizes kind:39000) — same as the Rust `channel_detail_from_event`;
+  the contract test pins the shape, not the creator identity.
+- Remaining `@tauri-apps/api` static imports in the web bundle
+  (useReconnectRelay, haptics, titleBarActions, useIsFullscreen, mediaUrl)
+  are the Task 5 boot-glue items, already inventoried above.
+- Task 4b backlog (throws `not-ported-yet: <command>`): profiles/presence
+  (6), relay members/agents (6), social/notes (8), contacts (2), forum (2),
+  workflows (11), personas (8), teams (9), channel templates (5),
+  apply_workspace (1), nip44 to-self (2, via PlatformSigner extension),
+  media commands (8, move to the PlatformMedia seam), misc native (2).
+  Full per-command table in ecombrain/phase2/command-map.md.

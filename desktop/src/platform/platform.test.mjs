@@ -46,8 +46,16 @@ test("getSigner_returnsLazyAdapterWithoutLoadingImpl", () => {
   assert.equal(typeof signer.signEvent, "function");
 });
 
-test("platformFactories_commandsMediaStillThrowNotWiredYet", () => {
-  const factories = { getCommands, getMedia };
+test("getCommands_returnsLazyAdapterWithoutLoadingImpl", () => {
+  // Wired in Task 4: returns a lazy proxy synchronously; the real adapter
+  // (tauri invoke passthrough or NIP-98 REST) loads on first call() via
+  // dynamic import.
+  const commands = getCommands();
+  assert.equal(typeof commands.call, "function");
+});
+
+test("platformFactories_mediaStillThrowsNotWiredYet", () => {
+  const factories = { getMedia };
   for (const [name, factory] of Object.entries(factories)) {
     assert.equal(typeof factory, "function", `${name} must be exported`);
     assert.throws(() => factory(), /not wired yet/, `${name} must throw`);

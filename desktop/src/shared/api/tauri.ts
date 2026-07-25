@@ -1,4 +1,4 @@
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { getCommands } from "@/platform";
 import type {
   AddChannelMembersInput,
   AddChannelMembersResult,
@@ -277,40 +277,17 @@ type RawSetCanvasResult = {
   event_id: string;
 };
 
-function toTauriError(error: unknown): Error {
-  if (error instanceof Error) {
-    return error;
-  }
-
-  if (typeof error === "string") {
-    return new Error(error);
-  }
-
-  if (
-    typeof error === "object" &&
-    error !== null &&
-    "message" in error &&
-    typeof error.message === "string"
-  ) {
-    return new Error(error.message);
-  }
-
-  try {
-    return new Error(JSON.stringify(error));
-  } catch {
-    return new Error("Unknown Tauri error");
-  }
-}
-
-export async function invokeTauri<T>(
+export function invokeTauri<T>(
   command: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
-  try {
-    return await tauriInvoke<T>(command, args);
-  } catch (error) {
-    throw toTauriError(error);
-  }
+  // Adapter C seam (Phase 2): routes through the platform commands adapter —
+  // commands.tauri is a passthrough to @tauri-apps/api invoke with the same
+  // toTauriError conversion that used to live here (zero desktop behavior
+  // change); commands.browser serves the core domains over NIP-98 REST and
+  // throws `not-ported-yet` for the rest. Every tauri*.ts proxy funnels
+  // through this one function, so this is the only rewire needed.
+  return getCommands().call<T>(command, args);
 }
 
 function fromRawChannel(channel: RawChannel): Channel {
