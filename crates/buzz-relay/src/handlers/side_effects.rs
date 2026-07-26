@@ -1877,7 +1877,7 @@ async fn handle_join_request(
     state.invalidate_membership(tenant, channel_id, &actor_bytes);
 
     let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
+    if let Err(e) = emit_system_message(
         tenant,
         state,
         channel_id,
@@ -1887,7 +1887,10 @@ async fn handle_join_request(
             "target": actor_hex,
         }),
     )
-    .await?;
+    .await
+    {
+        warn!(channel = %channel_id, error = %e, "join system message emission failed");
+    }
 
     if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
         warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
