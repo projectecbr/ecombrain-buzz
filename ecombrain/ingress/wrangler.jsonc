@@ -17,6 +17,7 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayContainer"] }],
   "vars": {
+    "TEAMS_PRODUCT_API_URL": "https://app.ecombrain.io",
     "RELAY_OPERATOR_API_ORIGIN": "https://ecombrain-teams-spike.yannis-83d.workers.dev",
     "RELAY_URL": "wss://ecombrain-teams-spike.yannis-83d.workers.dev",
     "BUZZ_MEDIA_BASE_URL": "https://ecombrain-teams-spike.yannis-83d.workers.dev/media",
