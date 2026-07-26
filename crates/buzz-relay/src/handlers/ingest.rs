@@ -318,6 +318,31 @@ pub(crate) async fn derive_reaction_channel(
     }
 }
 
+fn write_trace_action(event: &Event, channel_id: Option<Uuid>, was_inserted: bool) -> TraceAction {
+    let msg_id = msg_id_label(event.id.as_bytes());
+    let claimed_community = claimed_community_from_event(event);
+    match (channel_id, was_inserted) {
+        (Some(channel_id), true) => TraceAction::WriteInsert {
+            msg_id,
+            channel: channel_label(channel_id),
+            claimed_community,
+        },
+        (Some(channel_id), false) => TraceAction::WriteDuplicate {
+            msg_id,
+            channel: channel_label(channel_id),
+            claimed_community,
+        },
+        (None, _) => TraceAction::WriteInsertGlobal {
+            msg_id,
+            claimed_community,
+        },
+    }
+}
+
+fn side_effect_must_succeed(kind: u32) -> bool {
+    kind == KIND_NIP29_JOIN_REQUEST
+}
+
 /// Kinds that are always global (`channel_id = NULL`).
 ///
 /// If a client includes a stray `h` tag on these kinds, the ingest pipeline
@@ -2147,25 +2172,8 @@ async fn ingest_event_inner(
         };
 
         let pubkey_hex = auth.pubkey().to_hex();
-        // Spec WriteInsert (line 514) / WriteDuplicate (line 606): emit
-        // the abstract write action. The persist API returns
-        // `was_inserted` (true → Insert, false → Duplicate). This branch
-        // is the reaction path; channel_id is always Some here, so
-        // WriteInsertGlobal does not apply.
-        let claimed = claimed_community_from_event(&event);
-        let action = if was_inserted {
-            TraceAction::WriteInsert {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(channel_id.expect("reaction path has channel")),
-                claimed_community: claimed,
-            }
-        } else {
-            TraceAction::WriteDuplicate {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(channel_id.expect("reaction path has channel")),
-                claimed_community: claimed,
-            }
-        };
+        // Pulse notes are global, so their reactions legitimately have no channel.
+        let action = write_trace_action(&event, channel_id, was_inserted);
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
         dispatch_persistent_event(
             tenant,
@@ -2245,6 +2253,14 @@ async fn ingest_event_inner(
     };
 
     if !was_inserted {
+        // A previous attempt may have stored a join event before its membership
+        // mutation failed. Re-run this idempotent side effect so retrying the
+        // same signed event can recover instead of becoming a permanent no-op.
+        if side_effect_must_succeed(kind_u32) {
+            crate::handlers::side_effects::handle_side_effects(tenant, kind_u32, &event, state)
+                .await
+                .map_err(|e| IngestError::Internal(format!("error: join failed: {e}")))?;
+        }
         return Ok(IngestResult {
             event_id: event_id_hex,
             accepted: true,
@@ -2267,6 +2283,9 @@ async fn ingest_event_inner(
             crate::handlers::side_effects::handle_side_effects(tenant, kind_u32, &event, state)
                 .await
         {
+            if side_effect_must_succeed(kind_u32) {
+                return Err(IngestError::Internal(format!("error: join failed: {e}")));
+            }
             warn!(event_id = %event_id_hex, kind = kind_u32, "Side effect failed: {e}");
         }
     }
@@ -2296,23 +2315,7 @@ async fn ingest_event_inner(
     // same observation shape as channel-less inserts at this seam);
     // see docs/spec/MultiTenantRelay.tla lines 559-595.
     {
-        let claimed = claimed_community_from_event(&event);
-        let action = match (channel_id, was_inserted) {
-            (Some(ch), true) => TraceAction::WriteInsert {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(ch),
-                claimed_community: claimed,
-            },
-            (Some(ch), false) => TraceAction::WriteDuplicate {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                channel: channel_label(ch),
-                claimed_community: claimed,
-            },
-            (None, _) => TraceAction::WriteInsertGlobal {
-                msg_id: msg_id_label(event.id.as_bytes()),
-                claimed_community: claimed,
-            },
-        };
+        let action = write_trace_action(&event, channel_id, was_inserted);
         emit(tracer, action, state_for_request(tenant, auth.pubkey()));
     }
     dispatch_persistent_event(
@@ -2407,6 +2410,23 @@ mod tests {
     #[test]
     fn reactions_do_not_require_h_tag() {
         assert!(!requires_h_channel_scope(KIND_REACTION));
+    }
+
+    #[test]
+    fn write_trace_supports_global_and_channel_reactions() {
+        let event = make_dummy_event();
+        assert!(matches!(
+            write_trace_action(&event, None, true),
+            TraceAction::WriteInsertGlobal { .. }
+        ));
+        assert!(matches!(
+            write_trace_action(&event, Some(Uuid::nil()), true),
+            TraceAction::WriteInsert { .. }
+        ));
+        assert!(matches!(
+            write_trace_action(&event, Some(Uuid::nil()), false),
+            TraceAction::WriteDuplicate { .. }
+        ));
     }
 
     #[test]
@@ -3379,5 +3399,11 @@ mod tests {
         let err = validate_agent_turn_metric_envelope(&ev).unwrap_err();
         // error comes from validate_engram_nip44_content with label replaced
         assert!(err.contains("agent-turn-metric"), "got: {err}");
+    }
+
+    #[test]
+    fn join_side_effect_failure_is_not_acknowledged() {
+        assert!(side_effect_must_succeed(KIND_NIP29_JOIN_REQUEST));
+        assert!(!side_effect_must_succeed(KIND_REACTION));
     }
 }
