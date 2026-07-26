@@ -8,6 +8,7 @@ const LOCAL_DEV_RELAY_URLS = new Set([
   "ws://localhost:3000",
   "ws://127.0.0.1:3000",
 ]);
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 type LegacyWorkspaceStorageSnapshot = {
   workspaces: string | null;
@@ -110,7 +111,7 @@ export function applyLegacyWorkspaceStorage(
  * Sprout→Buzz first-run handoff that created a single localhost workspace.
  */
 export async function migrateLegacyWorkspaceStorageBeforeRender(): Promise<void> {
-  if (typeof window === "undefined") {
+  if (IS_WEB || typeof window === "undefined") {
     return;
   }
 

@@ -83,6 +83,7 @@ export const teamsQueryKey = ["teams"] as const;
 export const acpRuntimesQueryKey = ["acp-runtimes"] as const;
 export const managedAgentPrereqsQueryKey = ["managed-agent-prereqs"] as const;
 export const backendProvidersQueryKey = ["backend-providers"] as const;
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 export type EnsureGooseInChannelResult = AttachManagedAgentToChannelResult & {
   created: boolean;
@@ -172,8 +173,9 @@ export function useBackendProvidersQuery(options?: { enabled?: boolean }) {
   });
 }
 
-export function usePersonasQuery() {
+export function usePersonasQuery(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: personasQueryKey,
     queryFn: listPersonas,
     staleTime: 30_000,
@@ -229,7 +231,7 @@ export function useRelayAgentsQuery(options?: { enabled?: boolean }) {
 
 export function useManagedAgentsQuery(options?: { enabled?: boolean }) {
   return useQuery({
-    enabled: options?.enabled ?? true,
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: managedAgentsQueryKey,
     queryFn: listManagedAgents,
     staleTime: 5_000,
@@ -707,8 +709,9 @@ export function useBakedBuildEnvKeysQuery(options?: { enabled?: boolean }) {
   });
 }
 
-export function useTeamsQuery() {
+export function useTeamsQuery(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: teamsQueryKey,
     queryFn: listTeams,
     staleTime: 30_000,

@@ -11,6 +11,7 @@
 // ecombrain/contract-tests drives this file directly).
 
 import { finalizeEvent, generateSecretKey, getPublicKey } from "nostr-tools";
+import { v2 as nip44 } from "nostr-tools/nip44";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 
 import type { PlatformSigner } from "./types";
@@ -57,6 +58,11 @@ export function __resetLocalKeyForTests(): void {
 }
 
 export function createLocalKeySigner(): PlatformSigner {
+  const conversationKey = () =>
+    nip44.utils.getConversationKey(
+      loadSecretKey(),
+      getPublicKey(loadSecretKey()),
+    );
   return {
     getPublicKey() {
       return Promise.resolve(getPublicKey(loadSecretKey()));
@@ -75,6 +81,14 @@ export function createLocalKeySigner(): PlatformSigner {
       // VerifiedEvent is structurally identical to RelayEvent (id, pubkey,
       // created_at, kind, tags, content, sig).
       return Promise.resolve(event);
+    },
+
+    encryptToSelf(plaintext) {
+      return Promise.resolve(nip44.encrypt(plaintext, conversationKey()));
+    },
+
+    decryptFromSelf(ciphertext) {
+      return Promise.resolve(nip44.decrypt(ciphertext, conversationKey()));
     },
   };
 }

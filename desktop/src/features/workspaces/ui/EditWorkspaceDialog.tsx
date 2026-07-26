@@ -16,6 +16,8 @@ import {
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+
 type EditWorkspaceDialogProps = {
   workspace: Workspace | null;
   open: boolean;
@@ -91,8 +93,10 @@ export function EditWorkspaceDialog({
       // canonicalizes) before save so a bad path is caught here instead of
       // bricking a later boot. Only emit when the resolved value actually
       // changed so a no-op edit doesn't trigger a backend re-apply.
-      const expandedReposDir = await expandTilde(reposDir);
-      if (expandedReposDir !== workspace.reposDir) {
+      const expandedReposDir = IS_WEB
+        ? workspace.reposDir
+        : await expandTilde(reposDir);
+      if (!IS_WEB && expandedReposDir !== workspace.reposDir) {
         try {
           await validateReposDir(expandedReposDir ?? "");
         } catch (error) {
@@ -184,35 +188,37 @@ export function EditWorkspaceDialog({
               value={token}
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="edit-ws-repos-dir"
-            >
-              Repos Directory
-              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                (optional)
-              </span>
-            </label>
-            <Input
-              id="edit-ws-repos-dir"
-              onChange={(e) => {
-                setReposDir(e.target.value);
-                setReposDirError(null);
-              }}
-              placeholder="~/Development"
-              type="text"
-              value={reposDir}
-            />
-            {reposDirError ? (
-              <p className="text-xs text-destructive">{reposDirError}</p>
-            ) : null}
-            <p className="text-xs text-muted-foreground">
-              Point the agent's <code>REPOS</code> directory at an existing
-              folder so agents work in your local checkouts. Leave blank to use
-              the default location.
-            </p>
-          </div>
+          {!IS_WEB ? (
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor="edit-ws-repos-dir"
+              >
+                Repos Directory
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </label>
+              <Input
+                id="edit-ws-repos-dir"
+                onChange={(e) => {
+                  setReposDir(e.target.value);
+                  setReposDirError(null);
+                }}
+                placeholder="~/Development"
+                type="text"
+                value={reposDir}
+              />
+              {reposDirError ? (
+                <p className="text-xs text-destructive">{reposDirError}</p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Point the agent's <code>REPOS</code> directory at an existing
+                folder so agents work in your local checkouts. Leave blank to
+                use the default location.
+              </p>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between pt-2">
             <div>
               {canRemove && onRemove ? (

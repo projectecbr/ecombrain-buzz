@@ -29,6 +29,7 @@ import {
 } from "@/shared/api/tauri";
 
 const DEFAULT_AUTO_JOIN_CHANNEL_NAME = "general";
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 async function autoJoinDefaultChannel(
   queryClient: ReturnType<typeof useQueryClient>,
@@ -63,9 +64,9 @@ async function initializeWelcomeChannel(
   },
 ) {
   try {
-    const allowedMemberPubkeys = await getWelcomeGuideAgentPubkeys(
-      workspaceScope,
-    ).catch(() => []);
+    const allowedMemberPubkeys = IS_WEB
+      ? []
+      : await getWelcomeGuideAgentPubkeys(workspaceScope).catch(() => []);
     const welcomeChannel = await ensureWelcomeChannel(
       {
         createChannel,
@@ -77,16 +78,18 @@ async function initializeWelcomeChannel(
         allowedMemberPubkeys,
       },
     );
-    let didInitializeWelcomeGuide = false;
-    try {
-      await ensureWelcomeGuideIntro(welcomeChannel.id, workspaceScope);
-      didInitializeWelcomeGuide = true;
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
-        queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
-      ]);
-    } catch (error) {
-      console.warn("Failed to initialize Welcome guide.", error);
+    let didInitializeWelcomeGuide = IS_WEB;
+    if (!IS_WEB) {
+      try {
+        await ensureWelcomeGuideIntro(welcomeChannel.id, workspaceScope);
+        didInitializeWelcomeGuide = true;
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey }),
+          queryClient.invalidateQueries({ queryKey: relayAgentsQueryKey }),
+        ]);
+      } catch (error) {
+        console.warn("Failed to initialize Welcome guide.", error);
+      }
     }
     if (didInitializeWelcomeGuide) {
       markWelcomeChannelEnsured(pubkey, workspaceScope);

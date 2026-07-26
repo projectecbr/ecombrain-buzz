@@ -118,6 +118,10 @@ export async function load(url, context, nextLoad) {
     };
   }
 
+  if (url.endsWith(".css")) {
+    return { format: "module", shortCircuit: true, source: "" };
+  }
+
   if (url.endsWith(".tsx")) {
     const source = fs.readFileSync(fileURLToPath(url), "utf8");
     const transpiled = ts.transpileModule(source, {

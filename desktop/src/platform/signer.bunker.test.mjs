@@ -30,6 +30,7 @@ test("bunker signer binds one ephemeral client and delegates signing", async () 
     content: "hello",
     sig: "d".repeat(128),
   };
+  const nip44Calls = [];
   const signer = createBunkerSigner({
     storage,
     fetchFn: async (_url, init) => {
@@ -53,6 +54,14 @@ test("bunker signer binds one ephemeral client and delegates signing", async () 
       },
       getPublicKey: async () => "b".repeat(64),
       signEvent: async () => signed,
+      nip44Encrypt: async (pubkey, plaintext) => {
+        nip44Calls.push(["encrypt", pubkey, plaintext]);
+        return "ciphertext";
+      },
+      nip44Decrypt: async (pubkey, ciphertext) => {
+        nip44Calls.push(["decrypt", pubkey, ciphertext]);
+        return "plaintext";
+      },
     }),
   });
 
@@ -62,6 +71,12 @@ test("bunker signer binds one ephemeral client and delegates signing", async () 
     await signer.signEvent({ kind: 9, content: "hello", tags: [] }),
     signed,
   );
+  assert.equal(await signer.encryptToSelf("plaintext"), "ciphertext");
+  assert.equal(await signer.decryptFromSelf("ciphertext"), "plaintext");
+  assert.deepEqual(nip44Calls, [
+    ["encrypt", "b".repeat(64), "plaintext"],
+    ["decrypt", "b".repeat(64), "ciphertext"],
+  ]);
   assert.ok(storage.values.has(BUNKER_SESSION_KEY));
   assert.ok(
     !storage.values.get(BUNKER_SESSION_KEY).includes("b".repeat(64 * 2)),

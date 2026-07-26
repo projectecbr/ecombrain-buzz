@@ -12,6 +12,7 @@ import { useWorkspaces } from "@/features/workspaces/useWorkspaces";
 import { workspaceInitials } from "@/features/sidebar/ui/WorkspaceRail";
 import { setWorkspaceIcon } from "@/shared/api/workspaceProfile";
 import { Button } from "@/shared/ui/button";
+import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 
 const ICON_IMAGE_TYPES = ["image/gif", "image/jpeg", "image/png", "image/webp"];
 
@@ -89,7 +90,9 @@ export function WorkspaceIconSettingsCard() {
               src={icon}
             />
           ) : (
-            initials || "🐝"
+            initials || (
+              <FuzzyLogo ariaLabel="EcomBrain Teams" className="h-7 w-7" />
+            )
           )}
         </span>
         <div className="flex items-center gap-2">

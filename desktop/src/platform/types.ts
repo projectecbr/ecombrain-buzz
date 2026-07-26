@@ -76,6 +76,10 @@ export interface PlatformSigner {
   /** Hex public key of the active identity. */
   getPublicKey(): Promise<string>;
   signEvent(input: SignEventInput): Promise<RelayEvent>;
+  /** NIP-44 v2 encryption to the active identity itself. */
+  encryptToSelf(plaintext: string): Promise<string>;
+  /** NIP-44 v2 decryption from the active identity itself. */
+  decryptFromSelf(ciphertext: string): Promise<string>;
 }
 
 /**

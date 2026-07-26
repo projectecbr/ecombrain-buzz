@@ -21,6 +21,7 @@ import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
 import { isMacPlatform } from "@/shared/lib/platform";
 import { useIsFullscreen } from "@/shared/lib/useIsFullscreen";
+import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 
 type WorkspaceRailProps = {
   workspaces: Workspace[];
@@ -129,7 +130,12 @@ function WorkspaceButton({
                     src={iconUrl}
                   />
                 ) : (
-                  workspaceInitials(workspace.name) || "🐝"
+                  workspaceInitials(workspace.name) || (
+                    <FuzzyLogo
+                      ariaLabel="EcomBrain Teams"
+                      className="h-5 w-5"
+                    />
+                  )
                 )}
               </span>
               {showBadge ? (

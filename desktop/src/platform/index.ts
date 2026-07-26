@@ -111,6 +111,10 @@ export function getSigner(): PlatformSigner {
       getPublicKey: () => loadSignerImpl().then((impl) => impl.getPublicKey()),
       signEvent: (input) =>
         loadSignerImpl().then((impl) => impl.signEvent(input)),
+      encryptToSelf: (plaintext) =>
+        loadSignerImpl().then((impl) => impl.encryptToSelf(plaintext)),
+      decryptFromSelf: (ciphertext) =>
+        loadSignerImpl().then((impl) => impl.decryptFromSelf(ciphertext)),
     };
   }
   return signerProxy;

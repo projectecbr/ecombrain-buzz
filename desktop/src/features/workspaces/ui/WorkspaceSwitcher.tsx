@@ -30,6 +30,7 @@ import {
   useRelayConnection,
 } from "@/shared/api/useRelayConnection";
 import { useActiveWorkspaceIcon } from "@/features/workspaces/useWorkspaceIcons";
+import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 import { EditWorkspaceDialog } from "./EditWorkspaceDialog";
 
 const CONNECTION_STATE_LABEL: Record<ConnectionState, string> = {
@@ -78,7 +79,7 @@ export function WorkspaceEmojiIcon({
   }
   return (
     <span aria-hidden="true" className={className}>
-      <span className="-translate-y-px leading-normal">🐝</span>
+      <FuzzyLogo ariaLabel="EcomBrain Teams" className="h-full w-full" />
     </span>
   );
 }

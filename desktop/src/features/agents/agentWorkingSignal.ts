@@ -64,8 +64,9 @@ const typingByChannel = new Map<string, Map<string, number>>();
 const listeners = new Set<() => void>();
 let unsubscribeTurns: (() => void) | null = null;
 
-// Reference-stable snapshots for useSyncExternalStore. Valid only while at
-// least one listener keeps us subscribed to the underlying turns store.
+// Reference-stable snapshots for useSyncExternalStore. The first subscription
+// invalidates them after React's pre-subscribe reads, then notifications keep
+// them current while mounted.
 const stateCache = new Map<string, AgentWorkingState>();
 let channelsCache: WorkingChannelSummary[] | null = null;
 const channelPubkeysCache = new Map<string, string[]>();
@@ -191,17 +192,12 @@ export function getAgentWorkingState(
     return IDLE_STATE;
   }
   const cacheKey = `${normalizePubkey(agentPubkey)}|${channelId ?? ""}`;
-  const useCache = listeners.size > 0;
-  if (useCache) {
-    const cached = stateCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
+  const cached = stateCache.get(cacheKey);
+  if (cached) {
+    return cached;
   }
   const state = computeAgentWorkingState(agentPubkey, channelId);
-  if (useCache) {
-    stateCache.set(cacheKey, state);
-  }
+  stateCache.set(cacheKey, state);
   return state;
 }
 
@@ -212,8 +208,7 @@ export function getAgentWorkingState(
  * first-seen typing.
  */
 export function getWorkingChannels(): WorkingChannelSummary[] {
-  const useCache = listeners.size > 0;
-  if (useCache && channelsCache) {
+  if (channelsCache) {
     return channelsCache;
   }
 
@@ -262,9 +257,7 @@ export function getWorkingChannels(): WorkingChannelSummary[] {
   const result = [...byChannel.values()].sort((a, b) =>
     a.channelId.localeCompare(b.channelId),
   );
-  if (useCache) {
-    channelsCache = result;
-  }
+  channelsCache = result;
   return result;
 }
 
@@ -280,12 +273,9 @@ export function getWorkingAgentPubkeysForChannel(
   if (!channelId) {
     return EMPTY_PUBKEYS;
   }
-  const useCache = listeners.size > 0;
-  if (useCache) {
-    const cached = channelPubkeysCache.get(channelId);
-    if (cached) {
-      return cached;
-    }
+  const cached = channelPubkeysCache.get(channelId);
+  if (cached) {
+    return cached;
   }
   const merged = new Set<string>();
   for (const summary of getActiveTurnsByChannel()) {
@@ -303,9 +293,7 @@ export function getWorkingAgentPubkeysForChannel(
     }
   }
   const result = merged.size === 0 ? EMPTY_PUBKEYS : [...merged].sort();
-  if (useCache) {
-    channelPubkeysCache.set(channelId, result);
-  }
+  channelPubkeysCache.set(channelId, result);
   return result;
 }
 

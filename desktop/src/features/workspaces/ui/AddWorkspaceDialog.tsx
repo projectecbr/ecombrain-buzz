@@ -22,6 +22,8 @@ import {
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+
 type AddWorkspaceDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -63,12 +65,15 @@ export function AddWorkspaceDialog({
       // resolves to `undefined` so REPOS keeps its default location. Validate
       // the expanded value (the bytes the backend canonicalizes) before save
       // so a bad path is caught here instead of bricking a later boot.
-      const expandedReposDir = await expandTilde(reposDir);
-      try {
-        await validateReposDir(expandedReposDir ?? "");
-      } catch (error) {
-        setReposDirError(String(error));
-        return;
+      let expandedReposDir: string | undefined;
+      if (!IS_WEB) {
+        expandedReposDir = await expandTilde(reposDir);
+        try {
+          await validateReposDir(expandedReposDir ?? "");
+        } catch (error) {
+          setReposDirError(String(error));
+          return;
+        }
       }
 
       // If the relay handed out an invite code, claim it before saving the
@@ -193,35 +198,37 @@ export function AddWorkspaceDialog({
               <p className="text-xs text-destructive">{inviteError}</p>
             ) : null}
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label
-              className="text-sm font-medium text-foreground"
-              htmlFor="ws-repos-dir"
-            >
-              Repos Directory
-              <span className="ml-1 text-xs font-normal text-muted-foreground">
-                (optional)
-              </span>
-            </label>
-            <Input
-              id="ws-repos-dir"
-              onChange={(e) => {
-                setReposDir(e.target.value);
-                setReposDirError(null);
-              }}
-              placeholder="~/Development"
-              type="text"
-              value={reposDir}
-            />
-            {reposDirError ? (
-              <p className="text-xs text-destructive">{reposDirError}</p>
-            ) : null}
-            <p className="text-xs text-muted-foreground">
-              Point the agent's <code>REPOS</code> directory at an existing
-              folder so agents work in your local checkouts. Leave blank to use
-              the default location.
-            </p>
-          </div>
+          {!IS_WEB ? (
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-medium text-foreground"
+                htmlFor="ws-repos-dir"
+              >
+                Repos Directory
+                <span className="ml-1 text-xs font-normal text-muted-foreground">
+                  (optional)
+                </span>
+              </label>
+              <Input
+                id="ws-repos-dir"
+                onChange={(e) => {
+                  setReposDir(e.target.value);
+                  setReposDirError(null);
+                }}
+                placeholder="~/Development"
+                type="text"
+                value={reposDir}
+              />
+              {reposDirError ? (
+                <p className="text-xs text-destructive">{reposDirError}</p>
+              ) : null}
+              <p className="text-xs text-muted-foreground">
+                Point the agent's <code>REPOS</code> directory at an existing
+                folder so agents work in your local checkouts. Leave blank to
+                use the default location.
+              </p>
+            </div>
+          ) : null}
           <p className="text-xs text-muted-foreground">
             Workspaces share your active identity. To use a different key,
             import it on the profile step (or in settings).

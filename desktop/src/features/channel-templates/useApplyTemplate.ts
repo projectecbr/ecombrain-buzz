@@ -16,6 +16,8 @@ import { useChannelTemplatesQuery } from "@/features/channel-templates/hooks";
 import { setCanvas } from "@/shared/api/tauri";
 import type { ChannelTemplate } from "@/shared/api/types";
 
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+
 /**
  * TemplateBackend omits `config` — supply an empty object for provider backends.
  */
@@ -28,10 +30,10 @@ function toManagedBackend(
 
 export function useApplyTemplate() {
   const queryClient = useQueryClient();
-  const channelTemplatesQuery = useChannelTemplatesQuery();
-  const acpRuntimesQuery = useAvailableAcpRuntimes();
-  const personasQuery = usePersonasQuery();
-  const teamsQuery = useTeamsQuery();
+  const channelTemplatesQuery = useChannelTemplatesQuery({ enabled: !IS_WEB });
+  const acpRuntimesQuery = useAvailableAcpRuntimes({ enabled: !IS_WEB });
+  const personasQuery = usePersonasQuery({ enabled: !IS_WEB });
+  const teamsQuery = useTeamsQuery({ enabled: !IS_WEB });
   const { lastRuntimeId } = useLastRuntime();
 
   async function applyCanvas(

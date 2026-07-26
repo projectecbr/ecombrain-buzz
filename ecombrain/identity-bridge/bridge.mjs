@@ -19,12 +19,28 @@ const MAX_REQUEST_BYTES = 128 * 1024;
 const RATE_WINDOW_MS = 10_000;
 const RATE_LIMIT = 30;
 
-export function serviceHeaders({ secret, audience, method, url, body, now = Date.now(), requestId = randomUUID() }) {
+export function serviceHeaders({
+  secret,
+  audience,
+  method,
+  url,
+  body,
+  now = Date.now(),
+  requestId = randomUUID(),
+}) {
   const issuedAt = Math.floor(now / 1000);
   const expiresAt = issuedAt + 30;
   const bodyHash = createHash("sha256").update(body).digest("hex");
   const path = new URL(url).pathname;
-  const canonical = [method, path, audience, issuedAt, expiresAt, requestId, bodyHash].join("\n");
+  const canonical = [
+    method,
+    path,
+    audience,
+    issuedAt,
+    expiresAt,
+    requestId,
+    bodyHash,
+  ].join("\n");
   return {
     Authorization: `Teams-HMAC ${createHmac("sha256", secret).update(canonical).digest("hex")}`,
     "Content-Type": "application/json",
@@ -117,6 +133,24 @@ export function createRpcHandler({
         })
       ).result;
     }
+    if (
+      request.method === "nip44_encrypt" ||
+      request.method === "nip44_decrypt"
+    ) {
+      const [pubkey, value] = request.params;
+      if (!HEX_KEY.test(pubkey ?? "") || typeof value !== "string") {
+        throw new Error("invalid NIP-44 request");
+      }
+      return (
+        await callProduct({
+          clientPubkey,
+          connectionSecret,
+          method: request.method,
+          pubkey,
+          value,
+        })
+      ).result;
+    }
     throw new Error("unsupported NIP-46 method");
   }
 
@@ -146,11 +180,15 @@ export function createRpcHandler({
 
     let payload;
     try {
-      payload = { id: request.id, result: await dispatch(event.pubkey, request) };
+      payload = {
+        id: request.id,
+        result: await dispatch(event.pubkey, request),
+      };
     } catch (error) {
       payload = {
         id: request.id,
-        error: error instanceof Error ? error.message : "identity request failed",
+        error:
+          error instanceof Error ? error.message : "identity request failed",
       };
     }
     return finalizeEvent(
@@ -199,7 +237,9 @@ export async function startBridge() {
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) {
-      throw new Error(`product identity API rejected request (${response.status})`);
+      throw new Error(
+        `product identity API rejected request (${response.status})`,
+      );
     }
     return response.json();
   };
@@ -209,12 +249,18 @@ export async function startBridge() {
   const pool = new SimplePool({ enableReconnect: true });
   const subscription = pool.subscribe(
     [relayUrl],
-    { kinds: [NOSTR_CONNECT_KIND], "#p": [bunkerPubkey], since: Math.floor(Date.now() / 1000) },
+    {
+      kinds: [NOSTR_CONNECT_KIND],
+      "#p": [bunkerPubkey],
+      since: Math.floor(Date.now() / 1000),
+    },
     {
       onevent(event) {
         void handle(event)
           .then((response) =>
-            response ? Promise.any(pool.publish([relayUrl], response)) : undefined,
+            response
+              ? Promise.any(pool.publish([relayUrl], response))
+              : undefined,
           )
           .catch(() => undefined);
       },
@@ -229,7 +275,10 @@ export async function startBridge() {
   process.once("SIGTERM", stop);
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   startBridge().catch((error) => {
     console.error(
       "[teams-identity-bridge] startup failed:",

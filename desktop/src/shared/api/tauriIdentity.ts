@@ -1,8 +1,7 @@
-import { nip19 } from "nostr-tools";
-
 import { getPlatform, getSigner } from "@/platform";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { Identity } from "@/shared/api/types";
+import { truncatePubkey } from "@/shared/lib/pubkey";
 
 type RawIdentity = {
   pubkey: string;
@@ -20,16 +19,6 @@ function fromRawIdentity(raw: RawIdentity): Identity {
   };
 }
 
-/** Mirrors the Rust `truncated_display_name`: npub, first 10 + "…" + last 4. */
-function truncatedDisplayName(pubkey: string): string {
-  try {
-    const npub = nip19.npubEncode(pubkey);
-    return npub.length > 16 ? `${npub.slice(0, 10)}…${npub.slice(-4)}` : npub;
-  } catch {
-    return `${pubkey.slice(0, 10)}…${pubkey.slice(-4)}`;
-  }
-}
-
 /**
  * Web identity: the DEV-ONLY localkey signer's pubkey, shaped exactly like
  * the Rust `get_identity` result (never lost, never locked — there is no OS
@@ -39,7 +28,7 @@ async function getWebDevIdentity(): Promise<Identity> {
   const pubkey = await getSigner().getPublicKey();
   return {
     pubkey,
-    displayName: truncatedDisplayName(pubkey),
+    displayName: truncatePubkey(pubkey),
     lost: false,
     locked: false,
   };

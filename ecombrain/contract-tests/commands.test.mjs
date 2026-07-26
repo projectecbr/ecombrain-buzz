@@ -38,6 +38,8 @@ const RUN = randomUUID().slice(0, 8);
 // Shared state across the (serial) tests below.
 let channelId;
 let rootEventId;
+let forumPostId;
+let workflowId;
 
 test("channels: create_channel returns the Rust ChannelInfo shape", async () => {
   const channel = await call("create_channel", {
@@ -239,6 +241,169 @@ test("dms: open_dm returns a dm channel, hide_dm removes it from get_channels", 
     !after.some((c) => c.id === dm.id),
     "hidden dm is no longer listed",
   );
+});
+
+test("profiles: update, self-read, batch, and prefix search share one shape", async () => {
+  const displayName = `Contract ${RUN}`;
+  const updated = await call("update_profile", {
+    displayName,
+    about: `browser profile ${RUN}`,
+  });
+  const pubkey = await signer.getPublicKey();
+
+  assert.equal(updated.pubkey, pubkey);
+  assert.equal(updated.display_name, displayName);
+  assert.equal(updated.has_profile_event, true);
+
+  const [self, user, batch, search] = await Promise.all([
+    call("get_profile"),
+    call("get_user_profile", { pubkey }),
+    call("get_users_batch", { pubkeys: [pubkey] }),
+    call("search_users", { query: `Contract ${RUN}`, limit: 8, cursor: null }),
+  ]);
+  assert.equal(self.display_name, displayName);
+  assert.equal(user.display_name, displayName);
+  assert.equal(batch.profiles[pubkey].display_name, displayName);
+  assert.deepEqual(batch.missing, []);
+  assert.ok(search.users.some((entry) => entry.pubkey === pubkey));
+});
+
+test("social: publish/read/react/likes/contact-list round-trip", async () => {
+  const pubkey = await signer.getPublicKey();
+  const note = await call("publish_note", {
+    content: `pulse ${RUN}`,
+    replyTo: null,
+    mentionPubkeys: null,
+    mediaTags: null,
+  });
+
+  const fetched = await call("get_note", { noteId: note.event_id });
+  assert.equal(fetched.content, `pulse ${RUN}`);
+
+  const [mine, global, timeline] = await Promise.all([
+    call("get_user_notes", { pubkey, limit: 20, before: null, beforeId: null }),
+    call("get_global_notes", { limit: 50, before: null, beforeId: null }),
+    call("get_notes_timeline", { pubkeys: [pubkey], limitPerUser: 10 }),
+  ]);
+  for (const page of [mine, global, timeline]) {
+    assert.ok(page.notes.some((entry) => entry.id === note.event_id));
+  }
+
+  await call("add_reaction", {
+    eventId: note.event_id,
+    emoji: "🔥",
+    emojiUrl: null,
+  });
+  const reactions = await call("get_note_reactions", {
+    noteIds: [note.event_id],
+  });
+  assert.ok(
+    reactions.some(
+      (summary) =>
+        summary.note_id === note.event_id &&
+        summary.emoji === "🔥" &&
+        summary.pubkeys.includes(pubkey),
+    ),
+  );
+  const liked = await call("get_liked_notes", {
+    authorPubkey: pubkey,
+    limit: 20,
+  });
+  assert.ok(liked.notes.some((entry) => entry.id === note.event_id));
+
+  const contact = getPublicKey(generateSecretKey());
+  await call("set_contact_list", {
+    contacts: [{ pubkey: contact, relay_url: null, petname: "contract" }],
+  });
+  const contacts = await call("get_contact_list", { pubkey });
+  assert.ok(contacts.tags.some((tag) => tag[0] === "p" && tag[1] === contact));
+});
+
+test("forum: list and thread readers return Rust-compatible records", async () => {
+  const post = await call("send_channel_message", {
+    channelId,
+    content: `forum ${RUN}`,
+    parentEventId: null,
+    mediaTags: null,
+    emojiTags: null,
+    mentionTags: null,
+    mentionPubkeys: null,
+    kind: 45001,
+  });
+  forumPostId = post.event_id;
+  const reply = await call("send_channel_message", {
+    channelId,
+    content: `forum reply ${RUN}`,
+    parentEventId: forumPostId,
+    mediaTags: null,
+    emojiTags: null,
+    mentionTags: null,
+    mentionPubkeys: null,
+    kind: 45003,
+  });
+
+  const posts = await call("get_forum_posts", {
+    channelId,
+    limit: 20,
+    before: null,
+  });
+  assert.ok(posts.messages.some((entry) => entry.event_id === forumPostId));
+  const thread = await call("get_forum_thread", {
+    channelId,
+    eventId: forumPostId,
+    limit: null,
+    cursor: null,
+  });
+  assert.equal(thread.root.event_id, forumPostId);
+  assert.ok(thread.replies.some((entry) => entry.event_id === reply.event_id));
+});
+
+test("workflows: create/list/read/update/trigger/delete round-trip", async () => {
+  const yaml = `name: Contract ${RUN}\ntrigger:\n  on: webhook\nsteps:\n  - id: notify\n    action: send_message\n    text: contract ${RUN}\n`;
+  const created = await call("create_workflow", {
+    channelId,
+    yamlDefinition: yaml,
+  });
+  workflowId = created.id;
+  assert.equal(created.name, `Contract ${RUN}`);
+  assert.match(created.webhook_secret, /^[A-Za-z0-9_-]+$/);
+
+  const [one, channelWorkflows, all] = await Promise.all([
+    call("get_workflow", { workflowId }),
+    call("get_channel_workflows", { channelId }),
+    call("get_channels_workflows", { channelIds: [channelId] }),
+  ]);
+  assert.equal(one.id, workflowId);
+  assert.ok(channelWorkflows.some((entry) => entry.id === workflowId));
+  assert.ok(all.some((entry) => entry.id === workflowId));
+
+  const updated = await call("update_workflow", {
+    workflowId,
+    yamlDefinition: yaml.replace(`Contract ${RUN}`, `Updated ${RUN}`),
+  });
+  assert.equal(updated.name, `Updated ${RUN}`);
+  const triggered = await call("trigger_workflow", { workflowId });
+  assert.equal(triggered.workflow_id, workflowId);
+  assert.match(triggered.run_id, /^[0-9a-f-]{36}$/);
+  assert.deepEqual(await call("get_workflow_runs", { workflowId }), []);
+
+  await call("delete_workflow", { workflowId });
+});
+
+test("sidebar crypto: NIP-44 encrypt-to-self round-trips", async () => {
+  const plaintext = JSON.stringify({ run: RUN, channelId });
+  const ciphertext = await call("nip44_encrypt_to_self", { plaintext });
+  assert.notEqual(ciphertext, plaintext);
+  assert.equal(
+    await call("nip44_decrypt_from_self", { ciphertext }),
+    plaintext,
+  );
+});
+
+test("relay metadata: agent list and NIP-11 self use safe shapes", async () => {
+  assert.ok(Array.isArray(await call("list_relay_agents")));
+  const relaySelf = await call("get_relay_self");
+  assert.ok(relaySelf === null || /^[0-9a-f]{64}$/.test(relaySelf));
 });
 
 test("unported commands fail loudly with not-ported-yet", async () => {

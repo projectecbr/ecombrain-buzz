@@ -38,5 +38,13 @@ export function createTauriSigner(
       });
       return JSON.parse(eventJson) as RelayEvent;
     },
+
+    encryptToSelf(plaintext) {
+      return invokeFn<string>("nip44_encrypt_to_self", { plaintext });
+    },
+
+    decryptFromSelf(ciphertext) {
+      return invokeFn<string>("nip44_decrypt_from_self", { ciphertext });
+    },
   };
 }

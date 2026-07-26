@@ -88,6 +88,7 @@ const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 const WEB_HIDDEN_SETTINGS = new Set<SettingsSection>([
   "experimental",
   "agents",
+  "channel-templates",
   "compute",
   "local-archive",
   "mobile",
