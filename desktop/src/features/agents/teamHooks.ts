@@ -13,9 +13,11 @@ import type {
 } from "@/shared/api/types";
 
 export const teamsQueryKey = ["teams"] as const;
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
-export function useTeamsQuery() {
+export function useTeamsQuery(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: teamsQueryKey,
     queryFn: listTeams,
     staleTime: 30_000,

@@ -109,6 +109,7 @@ export const acpAuthMethodsQueryKey = ["acp-auth-methods"] as const;
 export const managedAgentPrereqsQueryKey = ["managed-agent-prereqs"] as const;
 export const backendProvidersQueryKey = ["backend-providers"] as const;
 export const gitBashPrerequisiteQueryKey = ["git-bash-prerequisite"] as const;
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 type InvalidateAgentQueriesOptions = {
   refetchChannels?: boolean;
@@ -190,7 +191,9 @@ export function useAcpRuntimesQuery(options?: { enabled?: boolean }) {
 }
 
 export function useAvailableAcpRuntimes(options?: { enabled?: boolean }) {
-  const query = useAcpRuntimesQuery(options);
+  const query = useAcpRuntimesQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
+  });
   const available = React.useMemo(
     () =>
       (query.data ?? []).filter(
@@ -254,8 +257,9 @@ export function useBackendProvidersQuery(options?: { enabled?: boolean }) {
   });
 }
 
-export function usePersonasQuery() {
+export function usePersonasQuery(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: personasQueryKey,
     queryFn: listPersonas,
     staleTime: 30_000,

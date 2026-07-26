@@ -113,7 +113,6 @@ const WEB_HIDDEN_SETTINGS = new Set<SettingsSection>([
   "local-archive",
   "mobile",
   "updates",
-  "doctor",
 ]);
 
 const SETTINGS_SECTION_VALUES: readonly SettingsSection[] = [

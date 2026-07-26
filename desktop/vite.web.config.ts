@@ -16,6 +16,9 @@ export default defineConfig(async () => ({
   plugins: [
     {
       name: "ecombrain-teams-html-entry",
+      renderChunk(code) {
+        return code.replace(/\bBuzz\b/g, "EcomBrain Teams");
+      },
       async writeBundle() {
         await rename(
           path.resolve(__dirname, "dist-web/index.web.html"),
@@ -52,6 +55,10 @@ export default defineConfig(async () => ({
         "src/platform/huddle.web-stub.tsx",
       ),
       "@/features/huddle/lib/huddleChannelName": path.resolve(
+        __dirname,
+        "src/platform/huddle.web-stub.tsx",
+      ),
+      "@/features/huddle/lib/huddleError": path.resolve(
         __dirname,
         "src/platform/huddle.web-stub.tsx",
       ),

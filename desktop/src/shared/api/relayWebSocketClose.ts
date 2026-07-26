@@ -15,6 +15,7 @@ export function closeWebSocket(id: number, reason: string): void {
 export function closeAllWebSockets(
   invokeFn: typeof invoke = invoke,
 ): Promise<void> {
+  if (import.meta.env?.VITE_PLATFORM === "web") return Promise.resolve();
   return invokeFn("plugin:websocket|disconnect_all").then(
     () => undefined,
     (err) => {

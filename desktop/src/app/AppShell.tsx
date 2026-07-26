@@ -96,7 +96,6 @@ import { useMessageDeepLinks } from "@/shared/useMessageDeepLinks";
 import { SidebarInset, SidebarProvider } from "@/shared/ui/sidebar";
 import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
-
 const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 const ShellPreventSleepProvider: React.ElementType = IS_WEB
   ? React.Fragment

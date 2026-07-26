@@ -14,6 +14,8 @@ export async function listen(): Promise<() => void> {
   return () => undefined;
 }
 
+export async function emit(): Promise<void> {}
+
 export class Channel<T = unknown> {
   onmessage?: (value: T) => void;
 }

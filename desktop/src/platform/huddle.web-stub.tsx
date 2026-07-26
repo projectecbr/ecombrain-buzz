@@ -46,3 +46,7 @@ export function HuddleAttachment() {
 export function buildHuddleChannelName(): string {
   return "";
 }
+
+export function formatHuddleActionError(error: unknown): string {
+  return error instanceof Error ? error.message : "Huddles are desktop-only.";
+}

@@ -516,9 +516,10 @@ function CommunityApp({
   let appContent: ReactNode = null;
   if (!transaction) {
     if (community.needsSetup) {
-      if (sharedIdentity) return <TeamsSessionError />;
       // Show welcome setup for first-run users with no communities
-      appContent = (
+      appContent = sharedIdentity ? (
+        <TeamsSessionError />
+      ) : (
         <WelcomeSetup
           initialPage={resumeFirstCommunityPage ?? undefined}
           onBack={onBackToMachineConfig}
