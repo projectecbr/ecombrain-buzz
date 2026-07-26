@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import { getPlatform } from "@/platform";
 import { migrateLegacyCommunityStorage } from "./communityStorage";
 
 const BUZZ_COMMUNITIES_KEY = "buzz-communities";
@@ -116,6 +117,9 @@ export async function migrateLegacyCommunityStorageBeforeRender(): Promise<void>
   }
 
   migrateLegacyCommunityStorage(window.localStorage);
+  if (getPlatform() === "web") {
+    return;
+  }
   const currentCommunitiesRaw =
     window.localStorage.getItem(BUZZ_COMMUNITIES_KEY);
   const hasCurrentActiveCommunity = window.localStorage.getItem(

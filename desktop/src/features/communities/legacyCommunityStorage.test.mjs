@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyLegacyCommunityStorage } from "./legacyCommunityStorage.ts";
+import { __setPlatformOverrideForTests } from "@/platform";
+import {
+  applyLegacyCommunityStorage,
+  migrateLegacyCommunityStorageBeforeRender,
+} from "./legacyCommunityStorage.ts";
 
 function createMemoryStorage(initial = {}) {
   const values = new Map(Object.entries(initial));
@@ -150,4 +154,19 @@ test("applyLegacyCommunityStorage migrates onboarding completion keys", () => {
   );
 
   assert.equal(storage.getItem("buzz-onboarding-complete.v1:abc123"), "true");
+});
+
+test("browser startup skips the native legacy storage command", async (t) => {
+  const originalWindow = globalThis.window;
+  const localStorage = createMemoryStorage();
+  globalThis.window = { localStorage };
+  __setPlatformOverrideForTests("web");
+  t.after(() => {
+    __setPlatformOverrideForTests(null);
+    globalThis.window = originalWindow;
+  });
+
+  await migrateLegacyCommunityStorageBeforeRender();
+
+  assert.equal(localStorage.length, 0);
 });
