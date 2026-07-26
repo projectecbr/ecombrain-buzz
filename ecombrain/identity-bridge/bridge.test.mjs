@@ -22,11 +22,19 @@ test("service authentication binds body, audience, path, and request ID", () => 
     requestId: "11111111-1111-4111-8111-111111111111",
   });
   assert.match(headers.Authorization, /^Teams-HMAC [0-9a-f]{64}$/);
-  assert.equal(headers["X-Teams-Service-Audience"], `teams-identity-bridge:${"a".repeat(64)}`);
+  assert.equal(
+    headers["X-Teams-Service-Audience"],
+    `teams-identity-bridge:${"a".repeat(64)}`,
+  );
   assert.equal(headers["X-Teams-Service-Body-Sha256"].length, 64);
 });
 
-function requestEvent(clientSecret, bunkerPubkey, request, createdAt = 1_700_000_000) {
+function requestEvent(
+  clientSecret,
+  bunkerPubkey,
+  request,
+  createdAt = 1_700_000_000,
+) {
   const conversationKey = nip44.v2.utils.getConversationKey(
     clientSecret,
     bunkerPubkey,
@@ -62,6 +70,7 @@ test("connect validates the server grant before signing for that client", async 
       calls.push(input);
       if (input.method === "connect") return { result: "ack" };
       if (input.method === "get_public_key") return { result: "b".repeat(64) };
+      if (input.method === "nip44_encrypt") return { result: "ciphertext" };
       return { result: JSON.stringify({ id: "signed" }) };
     },
   });
@@ -74,7 +83,10 @@ test("connect validates the server grant before signing for that client", async 
     }),
   );
   assert.ok(connect && verifyEvent(connect));
-  assert.deepEqual(responsePayload(clientSecret, connect), { id: "1", result: "ack" });
+  assert.deepEqual(responsePayload(clientSecret, connect), {
+    id: "1",
+    result: "ack",
+  });
 
   const getKey = await handle(
     requestEvent(clientSecret, bunkerPubkey, {
@@ -89,6 +101,25 @@ test("connect validates the server grant before signing for that client", async 
   });
   assert.equal(calls[1].connectionSecret, "s".repeat(43));
   assert.equal(calls[1].clientPubkey, getPublicKey(clientSecret));
+
+  const encrypted = await handle(
+    requestEvent(clientSecret, bunkerPubkey, {
+      id: "3",
+      method: "nip44_encrypt",
+      params: ["b".repeat(64), "private state"],
+    }),
+  );
+  assert.deepEqual(responsePayload(clientSecret, encrypted), {
+    id: "3",
+    result: "ciphertext",
+  });
+  assert.deepEqual(calls[2], {
+    clientPubkey: getPublicKey(clientSecret),
+    connectionSecret: "s".repeat(43),
+    method: "nip44_encrypt",
+    pubkey: "b".repeat(64),
+    value: "private state",
+  });
 });
 
 test("an unconnected client cannot ask the bridge to sign", async () => {

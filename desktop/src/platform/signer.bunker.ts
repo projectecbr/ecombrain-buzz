@@ -18,6 +18,8 @@ type BunkerClient = {
   connect(metadata?: { name?: string; url?: string }): Promise<void>;
   getPublicKey(): Promise<string>;
   signEvent(event: Required<SignEventInput>): Promise<RelayEvent>;
+  nip44Encrypt(pubkey: string, plaintext: string): Promise<string>;
+  nip44Decrypt(pubkey: string, ciphertext: string): Promise<string>;
   close?(): Promise<void>;
 };
 
@@ -197,6 +199,22 @@ export function createBunkerSigner(
           ...input,
           created_at: input.created_at ?? Math.floor(Date.now() / 1000),
         }),
+      );
+    },
+    async encryptToSelf(plaintext) {
+      const signer = await client();
+      return withTimeout(
+        signer
+          .getPublicKey()
+          .then((pubkey) => signer.nip44Encrypt(pubkey, plaintext)),
+      );
+    },
+    async decryptFromSelf(ciphertext) {
+      const signer = await client();
+      return withTimeout(
+        signer
+          .getPublicKey()
+          .then((pubkey) => signer.nip44Decrypt(pubkey, ciphertext)),
       );
     },
   };

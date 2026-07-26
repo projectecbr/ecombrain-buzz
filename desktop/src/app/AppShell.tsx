@@ -98,6 +98,26 @@ import { RelayConnectionOverlay } from "@/app/RelayConnectionOverlay";
 import { useSidebarRelayConnectionCard } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
 
 const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+const ShellPreventSleepProvider: React.ElementType = IS_WEB
+  ? React.Fragment
+  : PreventSleepProvider;
+
+function DesktopShellServices({
+  deferredPubkey,
+  pubkey,
+}: {
+  deferredPubkey: string | undefined;
+  pubkey: string | undefined;
+}) {
+  usePersonaSync(pubkey);
+  useAgentsDataRefresh();
+  useAutoRestartPolicy();
+  useAgentObserverIngestion();
+  const observerReconciled = useObserverArchiveReconciliation(pubkey);
+  useArchiveSync(observerReconciled);
+  useAgentMetricArchiveSeed(deferredPubkey);
+  return null;
+}
 const LazySettingsScreen = React.lazy(async () => {
   const module = await import("@/features/settings/ui/SettingsScreen");
   return { default: module.SettingsScreen };
@@ -169,31 +189,7 @@ export function AppShell() {
   const { starredChannelIds, starChannel, unstarChannel } = useChannelStars(
     identityQuery.data?.pubkey,
   );
-  usePersonaSync(identityQuery.data?.pubkey);
-  useAgentsDataRefresh();
-  // Chunk F: auto-restart drifted idle agents (per-agent opt-out, default ON).
-  useAutoRestartPolicy();
-  // Owner-global observer ingestion: receives + decrypts agent observer
-  // frames and keeps derived active-turn liveness in sync app-wide, so no
-  // individual screen/panel has to mount its own bridge for ingestion.
-  // Intentionally mounted without a `startupReady`/identity guard: before
-  // `currentPubkey` resolves the hook ingests managed agents only, and
-  // relay-owned agents join automatically once identity arrives. Adding a
-  // guard here would drop managed-agent coverage during startup.
-  useAgentObserverIngestion();
-  // Kind 24200 is relay-ephemeral, so reconciliation runs eagerly (not
-  // deferred) and unconditionally repairs the DB subscription on internal
-  // builds — otherwise frames emitted before the listener opens are lost.
-  const observerReconciled = useObserverArchiveReconciliation(
-    identityQuery.data?.pubkey,
-  );
-  // useArchiveSync must wait for reconciliation, or listeners could open
-  // before kind 24200 is guaranteed present in the subscription.
-  useArchiveSync(observerReconciled);
-  // Kind 44200 is relay-persisted (durable) and stays deferred: missed
-  // startup frames can be replayed, so there's no ordering constraint.
   const deferredPubkey = startupReady ? identityQuery.data?.pubkey : undefined;
-  useAgentMetricArchiveSeed(deferredPubkey);
   const profileQuery = useProfileQuery();
   useRelayAutoHeal();
   usePresenceSubscription();
@@ -707,7 +703,13 @@ export function AppShell() {
   });
 
   return (
-    <PreventSleepProvider>
+    <ShellPreventSleepProvider>
+      {!IS_WEB ? (
+        <DesktopShellServices
+          deferredPubkey={deferredPubkey}
+          pubkey={identityQuery.data?.pubkey}
+        />
+      ) : null}
       <ChannelNavigationProvider channels={channels}>
         <AppShellProvider
           value={{
@@ -993,6 +995,6 @@ export function AppShell() {
           </HuddleProvider>
         </AppShellProvider>
       </ChannelNavigationProvider>
-    </PreventSleepProvider>
+    </ShellPreventSleepProvider>
   );
 }

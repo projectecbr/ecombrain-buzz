@@ -25,6 +25,7 @@ const browserWindow = {
   setBadgeLabel: async () => undefined,
   requestUserAttention: async () => undefined,
   isFullscreen: async () => false,
+  onResized: listen,
   listen,
 };
 

@@ -1,6 +1,12 @@
 import * as React from "react";
 import { getVersion } from "@tauri-apps/api/app";
-import { AlertCircle, ArrowLeft, LoaderCircle, RefreshCw } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowLeft,
+  LoaderCircle,
+  LogOut,
+  RefreshCw,
+} from "lucide-react";
 
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import {
@@ -47,6 +53,8 @@ type SettingsViewProps = SettingsPanelProps & {
   onSectionChange: (section: SettingsSection) => void;
   section: SettingsSection;
 };
+
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 const settingsNavGroups: Array<{
   label: string;
@@ -150,6 +158,24 @@ export function SettingsView({
 
   const [isLoaded, setIsLoaded] = React.useState(false);
   const [appVersion, setAppVersion] = React.useState<string | null>(null);
+  const [signOutError, setSignOutError] = React.useState<string | null>(null);
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+
+  async function signOut() {
+    setIsSigningOut(true);
+    setSignOutError(null);
+    try {
+      const response = await fetch("/teams/api/session", {
+        credentials: "same-origin",
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Sign out failed");
+      window.location.assign("/login");
+    } catch {
+      setIsSigningOut(false);
+      setSignOutError("Could not sign out. Please try again.");
+    }
+  }
 
   React.useEffect(() => {
     const frameId = window.requestAnimationFrame(() => setIsLoaded(true));
@@ -294,6 +320,26 @@ export function SettingsView({
         </SidebarContent>
 
         <SidebarFooter>
+          {IS_WEB ? (
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  disabled={isSigningOut}
+                  onClick={() => void signOut()}
+                  tooltip="Sign out"
+                  type="button"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>{isSigningOut ? "Signing out…" : "Sign out"}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          ) : null}
+          {signOutError ? (
+            <p aria-live="polite" className="px-2 text-xs text-destructive">
+              {signOutError}
+            </p>
+          ) : null}
           {appVersion ? (
             <p
               className="px-2 pb-1 text-xs text-sidebar-foreground/45"

@@ -32,6 +32,7 @@ import {
 } from "@/shared/api/tauri";
 
 const STARTER_CHANNEL_SETUP_TOAST_ID = "starter-channel-setup-error";
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
 export type ChannelInitResult =
   | { ok: true; focusChannelId?: string }
@@ -45,6 +46,11 @@ function seedWelcomeExperience(
   pubkey: string | null,
   communityScope: string | null,
 ) {
+  if (IS_WEB) {
+    markWelcomeChannelEnsured(pubkey, communityScope);
+    return Promise.resolve();
+  }
+
   const key = `${communityScope ?? ""}:${channelId}`;
   const current = welcomeSeedPromises.get(key);
   if (current) return current;

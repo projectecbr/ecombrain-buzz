@@ -16,6 +16,8 @@ import {
 } from "@/shared/ui/dialog";
 import { Input } from "@/shared/ui/input";
 
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
+
 type EditCommunityDialogProps = {
   community: Community | null;
   open: boolean;
@@ -91,8 +93,10 @@ export function EditCommunityDialog({
       // canonicalizes) before save so a bad path is caught here instead of
       // bricking a later boot. Only emit when the resolved value actually
       // changed so a no-op edit doesn't trigger a backend re-apply.
-      const expandedReposDir = await expandTilde(reposDir);
-      if (expandedReposDir !== community.reposDir) {
+      const expandedReposDir = IS_WEB
+        ? community.reposDir
+        : await expandTilde(reposDir);
+      if (!IS_WEB && expandedReposDir !== community.reposDir) {
         try {
           await validateReposDir(expandedReposDir ?? "");
         } catch (error) {

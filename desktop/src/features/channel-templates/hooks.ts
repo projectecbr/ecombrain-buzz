@@ -14,9 +14,11 @@ import type {
 } from "@/shared/api/types";
 
 export const channelTemplatesQueryKey = ["channel-templates"] as const;
+const IS_WEB = import.meta.env?.VITE_PLATFORM === "web";
 
-export function useChannelTemplatesQuery() {
+export function useChannelTemplatesQuery(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: !IS_WEB && (options?.enabled ?? true),
     queryKey: channelTemplatesQueryKey,
     queryFn: listChannelTemplates,
     staleTime: 30_000,

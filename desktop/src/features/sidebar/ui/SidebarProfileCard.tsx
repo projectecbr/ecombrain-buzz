@@ -14,6 +14,7 @@ import type { Community } from "@/features/communities/types";
 import { CommunitySwitcher } from "@/features/communities/ui/CommunitySwitcher";
 import type { PresenceStatus, Profile, UserStatus } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
+import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 
 type SidebarProfileCardProps = {
   activeCommunity: Community | null;
@@ -86,7 +87,7 @@ export function SidebarProfileCard({
         aria-hidden="true"
         className="flex w-3.5 shrink-0 items-center justify-center text-2xs"
       >
-        <span className="-translate-y-px leading-normal">🐝</span>
+        <FuzzyLogo ariaLabel="EcomBrain Teams" className="h-3.5 w-3.5" />
       </span>
       <span className="truncate">{communityLabel}</span>
     </span>

@@ -12,6 +12,7 @@ import { useCommunities } from "@/features/communities/useCommunities";
 import { getInitials } from "@/shared/lib/initials";
 import { setCommunityIcon } from "@/shared/api/communityProfile";
 import { Button } from "@/shared/ui/button";
+import { FuzzyLogo } from "@/shared/ui/buzz-logo/FuzzyLogo";
 
 const ICON_IMAGE_TYPES = ["image/gif", "image/jpeg", "image/png", "image/webp"];
 
@@ -87,7 +88,9 @@ export function CommunityIconSettingsCard() {
               src={icon}
             />
           ) : (
-            initials || "🐝"
+            initials || (
+              <FuzzyLogo ariaLabel="EcomBrain Teams" className="h-7 w-7" />
+            )
           )}
         </span>
         <div className="flex items-center gap-2">

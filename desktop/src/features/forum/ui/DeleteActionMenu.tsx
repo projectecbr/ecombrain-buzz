@@ -25,8 +25,8 @@ export function DeleteActionMenu({ label, onConfirm }: DeleteActionMenuProps) {
       <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <button
+            aria-label={`More actions for ${label}`}
             className="rounded-md p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
-            tabIndex={-1}
             type="button"
           >
             <MoreHorizontal className={iconClass} />
