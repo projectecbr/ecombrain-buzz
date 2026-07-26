@@ -1,16 +1,17 @@
 import { pathToFileURL } from "node:url";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createServer } from "node:http";
 
 import {
   finalizeEvent,
   getPublicKey,
-  SimplePool,
   verifyEvent,
 } from "nostr-tools";
 import * as nip44 from "nostr-tools/nip44";
-import { useWebSocketImplementation } from "nostr-tools/pool";
 import { hexToBytes } from "nostr-tools/utils";
-import WebSocket from "ws";
+import { WebSocketServer } from "ws";
+
+import { createProvisioner } from "./provisioning.mjs";
 
 const NOSTR_CONNECT_KIND = 24133;
 const HEX_KEY = /^[0-9a-f]{64}$/;
@@ -18,6 +19,8 @@ const CONNECTION_SECRET = /^[A-Za-z0-9_-]{43}$/;
 const MAX_REQUEST_BYTES = 128 * 1024;
 const RATE_WINDOW_MS = 10_000;
 const RATE_LIMIT = 30;
+const MAX_FRAME_BYTES = 160 * 1024;
+const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function serviceHeaders({
   secret,
@@ -203,6 +206,174 @@ export function createRpcHandler({
   };
 }
 
+function matchesResponse(filter, event) {
+  if (Array.isArray(filter.kinds) && !filter.kinds.includes(event.kind)) {
+    return false;
+  }
+  if (
+    Array.isArray(filter.authors) &&
+    !filter.authors.includes(event.pubkey)
+  ) {
+    return false;
+  }
+  if (Array.isArray(filter["#p"])) {
+    const recipients = new Set(
+      event.tags.filter((tag) => tag[0] === "p").map((tag) => tag[1]),
+    );
+    if (!filter["#p"].some((pubkey) => recipients.has(pubkey))) return false;
+  }
+  return true;
+}
+
+function send(socket, frame) {
+  if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(frame));
+}
+
+export async function createBunkerRelayServer({
+  bunkerPubkey,
+  handle,
+  controlSecret,
+  handleProvision,
+  host,
+  port,
+}) {
+  if (!HEX_KEY.test(bunkerPubkey) || typeof handle !== "function") {
+    throw new Error("invalid bunker relay configuration");
+  }
+  const controlReplay = new Map();
+  const server = createServer(async (request, response) => {
+    if (request.method === "GET" && request.url === "/_health") {
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end('{"ok":true}');
+      return;
+    }
+    if (request.method === "POST" && request.url === "/provision" && handleProvision) {
+      let rawBody = "";
+      for await (const chunk of request) {
+        rawBody += chunk;
+        if (Buffer.byteLength(rawBody) > MAX_REQUEST_BYTES) {
+          response.writeHead(413).end();
+          return;
+        }
+      }
+      const audience = request.headers["x-teams-service-audience"] ?? "";
+      const issuedAt = Number(request.headers["x-teams-service-issued-at"]);
+      const expiresAt = Number(request.headers["x-teams-service-expires-at"]);
+      const requestId = request.headers["x-teams-service-request-id"] ?? "";
+      const bodyHash = request.headers["x-teams-service-body-sha256"] ?? "";
+      const authorization = request.headers.authorization ?? "";
+      const now = Math.floor(Date.now() / 1000);
+      for (const [id, expiry] of controlReplay) {
+        if (expiry <= now) controlReplay.delete(id);
+      }
+      const expectedAudience = `teams-identity-provision:${bunkerPubkey}`;
+      const signature = authorization.startsWith("Teams-HMAC ") ? authorization.slice(11) : "";
+      const canonical = ["POST", "/teams/service/identity/provision", audience, issuedAt, expiresAt, requestId, bodyHash].join("\n");
+      const expected = typeof controlSecret === "string" && controlSecret.length >= 32
+        ? createHmac("sha256", controlSecret).update(canonical).digest("hex")
+        : "";
+      const valid = audience === expectedAudience && REQUEST_ID.test(requestId) &&
+        /^[0-9a-f]{64}$/.test(bodyHash) && bodyHash === createHash("sha256").update(rawBody).digest("hex") &&
+        Number.isSafeInteger(issuedAt) && Number.isSafeInteger(expiresAt) && issuedAt <= now + 15 &&
+        expiresAt >= now - 15 && expiresAt > issuedAt && expiresAt - issuedAt <= 60 &&
+        /^[0-9a-f]{64}$/.test(signature) && /^[0-9a-f]{64}$/.test(expected) &&
+        timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expected, "hex")) &&
+        (controlReplay.get(requestId) ?? 0) <= now;
+      if (!valid) {
+        response.writeHead(401, { "Content-Type": "application/json" });
+        response.end('{"error":"Unauthorized"}');
+        return;
+      }
+      controlReplay.set(requestId, expiresAt + 15);
+      try {
+        const result = await handleProvision(JSON.parse(rawBody));
+        response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "private, no-store" });
+        response.end(JSON.stringify(result));
+      } catch {
+        response.writeHead(400, { "Content-Type": "application/json" });
+        response.end('{"error":"Provisioning request failed"}');
+      }
+      return;
+    }
+    response.writeHead(404).end();
+  });
+  const sockets = new Set();
+  const websocket = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
+  server.on("upgrade", (request, socket, head) => {
+    if (request.url !== "/") {
+      socket.destroy();
+      return;
+    }
+    websocket.handleUpgrade(request, socket, head, (client) => {
+      websocket.emit("connection", client, request);
+    });
+  });
+  websocket.on("connection", (socket) => {
+    sockets.add(socket);
+    const subscriptions = new Map();
+    socket.on("close", () => sockets.delete(socket));
+    socket.on("message", (raw, isBinary) => {
+      if (isBinary || raw.byteLength > MAX_FRAME_BYTES) {
+        socket.close(1003, "text frames only");
+        return;
+      }
+      let frame;
+      try {
+        frame = JSON.parse(raw.toString());
+      } catch {
+        send(socket, ["NOTICE", "invalid JSON"]);
+        return;
+      }
+      if (!Array.isArray(frame) || typeof frame[0] !== "string") return;
+      if (frame[0] === "REQ" && typeof frame[1] === "string") {
+        const filters = frame.slice(2).filter(
+          (filter) => filter && typeof filter === "object" && !Array.isArray(filter),
+        );
+        subscriptions.set(frame[1], filters);
+        send(socket, ["EOSE", frame[1]]);
+        return;
+      }
+      if (frame[0] === "CLOSE" && typeof frame[1] === "string") {
+        subscriptions.delete(frame[1]);
+        return;
+      }
+      if (frame[0] !== "EVENT" || !frame[1] || typeof frame[1] !== "object") {
+        return;
+      }
+      const event = frame[1];
+      void handle(event)
+        .then((response) => {
+          if (!response) {
+            send(socket, ["OK", event.id ?? "", false, "rejected"]);
+            return;
+          }
+          send(socket, ["OK", event.id, true, ""]);
+          for (const [subscriptionId, filters] of subscriptions) {
+            if (filters.some((filter) => matchesResponse(filter, response))) {
+              send(socket, ["EVENT", subscriptionId, response]);
+            }
+          }
+        })
+        .catch(() => send(socket, ["OK", event.id ?? "", false, "rejected"]));
+    });
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(port, host, resolve);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("bunker relay did not bind");
+  return {
+    url: `ws://${host}:${address.port}`,
+    close: () =>
+      new Promise((resolve) => {
+        for (const socket of sockets) socket.terminate();
+        websocket.close();
+        server.close(resolve);
+      }),
+  };
+}
+
 function requiredEnv(name) {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
@@ -210,17 +381,24 @@ function requiredEnv(name) {
 }
 
 export async function startBridge() {
-  const relayUrl = requiredEnv("TEAMS_RELAY_URL");
   const productApiUrl = new URL(
     "/api/internal/teams/identity/rpc",
     requiredEnv("TEAMS_PRODUCT_API_URL"),
   ).toString();
   const serviceSecret = requiredEnv("TEAMS_IDENTITY_BRIDGE_SECRET");
+  const controlSecret = requiredEnv("TEAMS_PROVISIONING_CONTROL_SECRET");
   const secretHex = requiredEnv("TEAMS_BUNKER_SECRET_KEY");
-  if (!HEX_KEY.test(secretHex) || serviceSecret.length < 32) {
+  const operatorSecretHex = requiredEnv("TEAMS_OPERATOR_SECRET_KEY");
+  if (
+    !HEX_KEY.test(secretHex) ||
+    !HEX_KEY.test(operatorSecretHex) ||
+    serviceSecret.length < 32 ||
+    controlSecret.length < 32
+  ) {
     throw new Error("identity bridge secret configuration is invalid");
   }
   const bunkerSecret = hexToBytes(secretHex);
+  const operatorSecret = hexToBytes(operatorSecretHex);
   const bunkerPubkey = getPublicKey(bunkerSecret);
   const callProduct = async (body) => {
     const rawBody = JSON.stringify(body);
@@ -244,32 +422,39 @@ export async function startBridge() {
     return response.json();
   };
   const handle = createRpcHandler({ bunkerSecret, callProduct });
-
-  useWebSocketImplementation(WebSocket);
-  const pool = new SimplePool({ enableReconnect: true });
-  const subscription = pool.subscribe(
-    [relayUrl],
-    {
-      kinds: [NOSTR_CONNECT_KIND],
-      "#p": [bunkerPubkey],
-      since: Math.floor(Date.now() / 1000),
-    },
-    {
-      onevent(event) {
-        void handle(event)
-          .then((response) =>
-            response
-              ? Promise.any(pool.publish([relayUrl], response))
-              : undefined,
-          )
-          .catch(() => undefined);
-      },
-    },
-  );
+  const provisioner = createProvisioner({
+    fetcher: fetch,
+    publicBase: requiredEnv("TEAMS_PRODUCT_API_URL"),
+    operatorOrigin: requiredEnv("TEAMS_OPERATOR_API_ORIGIN"),
+    operatorSecret,
+    operatorServiceSecret: requiredEnv("TEAMS_OPERATOR_SERVICE_SECRET"),
+    bunkerPubkey,
+    relayServiceMasterSecret: requiredEnv("TEAMS_RELAY_SERVICE_SECRET"),
+  });
+  const handleProvision = async (body) => {
+    if (body?.action === "ensure") return provisioner.ensureCommunity(body);
+    if (body?.action === "reconcile") return provisioner.reconcileCommunity(body);
+    throw new Error("unsupported provisioning action");
+  };
+  const bind = requiredEnv("TEAMS_BUNKER_BIND_ADDR");
+  const separator = bind.lastIndexOf(":");
+  const host = bind.slice(0, separator);
+  const port = Number(bind.slice(separator + 1));
+  if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error("TEAMS_BUNKER_BIND_ADDR is invalid");
+  }
+  const relay = await createBunkerRelayServer({
+    bunkerPubkey,
+    handle,
+    controlSecret,
+    handleProvision,
+    host,
+    port,
+  });
   const stop = () => {
-    subscription.close();
-    pool.destroy();
+    void relay.close();
     bunkerSecret.fill(0);
+    operatorSecret.fill(0);
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);

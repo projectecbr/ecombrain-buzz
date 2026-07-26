@@ -24,6 +24,7 @@ import type { RelayEvent } from "@/shared/api/types";
 // node test runner (contract tests) resolves them; `allowImportingTsExtensions`
 // + the bundler accept it everywhere else.
 import { getSigner } from "../index.ts";
+import { relayAuthHttpUrl } from "../relay-auth-url.ts";
 import type { PlatformSigner, SignEventInput } from "../types";
 import {
   DIRECTORY_PAGE_SIZE,
@@ -264,11 +265,12 @@ export function createRelayContext(
     url: string,
     body: string,
   ): Promise<string> {
+    const authUrl = relayAuthHttpUrl(url);
     const event = await signer.signEvent({
       kind: KIND_HTTP_AUTH,
       content: "",
       tags: [
-        ["u", url],
+        ["u", authUrl],
         ["method", method],
         ["payload", await sha256Hex(body)],
         ["nonce", crypto.randomUUID()],

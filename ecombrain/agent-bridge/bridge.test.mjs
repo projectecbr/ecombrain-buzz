@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createEventProcessor, serviceHeaders } from "./bridge.mjs";
+import { createEventProcessor, relayPost, serviceHeaders } from "./bridge.mjs";
 
 test("service request signature binds the product path and body", () => {
   const headers = serviceHeaders({
@@ -15,6 +15,29 @@ test("service request signature binds the product path and body", () => {
   });
   assert.match(headers.Authorization, /^Teams-HMAC [0-9a-f]{64}$/);
   assert.equal(headers["X-Teams-Service-Body-Sha256"].length, 64);
+});
+
+test("relay calls use public service transport while preserving canonical NIP-98 auth", async () => {
+  const communityId = "11111111-1111-4111-8111-111111111111";
+  let forwarded;
+  const result = await relayPost({
+    url: "https://tenant-1.teams.ecombrain.internal/query?limit=10",
+    body: "[]",
+    authorizationEvent: { id: "signed" },
+  }, {
+    baseUrl: "https://app.ecombrain.io",
+    serviceSecret: "r".repeat(32),
+    communityId,
+    fetcher: async (url, init) => {
+      forwarded = { url: String(url), init };
+      return Response.json([]);
+    },
+  });
+
+  assert.deepEqual(result, []);
+  assert.equal(forwarded.url, "https://app.ecombrain.io/teams/service/relay/query?limit=10");
+  assert.equal(forwarded.init.headers.Authorization, `Nostr ${Buffer.from('{"id":"signed"}').toString("base64")}`);
+  assert.equal(forwarded.init.headers["X-Teams-Relay-Audience"], `teams-relay-service:agent:${communityId}`);
 });
 
 test("an accepted mention becomes one durable run, signed reply, publish, and ack", async () => {

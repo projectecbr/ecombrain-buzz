@@ -52,12 +52,32 @@ function nostrAuthorization(event) {
   return `Nostr ${Buffer.from(JSON.stringify(event), "utf8").toString("base64")}`;
 }
 
-async function relayPost(grant) {
-  const response = await fetch(grant.url, {
+export function relayServiceHeaders({ secret, communityId, method, url, body, now = Date.now(), requestId = randomUUID() }) {
+  const issuedAt = Math.floor(now / 1000);
+  const expiresAt = issuedAt + 30;
+  const audience = `teams-relay-service:agent:${communityId}`;
+  const bodyHash = createHash("sha256").update(body).digest("hex");
+  const parsed = new URL(url);
+  const canonical = [method, `${parsed.pathname}${parsed.search}`, audience, issuedAt, expiresAt, requestId, bodyHash].join("\n");
+  return {
+    "X-Teams-Relay-Authorization": `Teams-HMAC ${createHmac("sha256", secret).update(canonical).digest("hex")}`,
+    "X-Teams-Relay-Audience": audience,
+    "X-Teams-Relay-Issued-At": String(issuedAt),
+    "X-Teams-Relay-Expires-At": String(expiresAt),
+    "X-Teams-Relay-Request-Id": requestId,
+    "X-Teams-Relay-Body-Sha256": bodyHash,
+  };
+}
+
+export async function relayPost(grant, { baseUrl, serviceSecret, communityId, fetcher = fetch }) {
+  const canonical = new URL(grant.url);
+  const transport = new URL(`/teams/service/relay${canonical.pathname}${canonical.search}`, baseUrl);
+  const response = await fetcher(transport, {
     method: "POST",
     headers: {
       Authorization: nostrAuthorization(grant.authorizationEvent),
       "Content-Type": "application/json",
+      ...relayServiceHeaders({ secret: serviceSecret, communityId, method: "POST", url: transport, body: grant.body }),
     },
     body: grant.body,
     signal: AbortSignal.timeout(15_000),
@@ -69,11 +89,13 @@ async function relayPost(grant) {
 export async function startBridge() {
   const communityId = requiredEnv("TEAMS_COMMUNITY_ID");
   const serviceSecret = requiredEnv("TEAMS_AGENT_SERVICE_SECRET");
+  const relayServiceSecret = requiredEnv("TEAMS_RELAY_SERVICE_SECRET");
+  const productBase = requiredEnv("TEAMS_PRODUCT_API_URL");
   const productUrl = new URL(
     "/api/internal/teams/agent/rpc",
-    requiredEnv("TEAMS_PRODUCT_API_URL"),
+    productBase,
   ).toString();
-  if (serviceSecret.length < 32) throw new Error("agent bridge secret is too short");
+  if (serviceSecret.length < 32 || relayServiceSecret.length < 32) throw new Error("agent bridge secret is too short");
   const audience = `teams-agent-bridge:${communityId}`;
   const callProduct = async (body) => {
     const rawBody = JSON.stringify(body);
@@ -89,7 +111,11 @@ export async function startBridge() {
   const publishReply = async (bridgeRunId) => {
     const grant = await callProduct({ action: "sign_publish_auth", bridgeRunId });
     const event = JSON.parse(grant.body);
-    const result = await relayPost(grant);
+    const result = await relayPost(grant, {
+      baseUrl: productBase,
+      serviceSecret: relayServiceSecret,
+      communityId,
+    });
     if (result.accepted === false) throw new Error("relay rejected the agent reply");
     return event.id;
   };
@@ -100,7 +126,11 @@ export async function startBridge() {
   for (;;) {
     try {
       const grant = await callProduct({ action: "poll_auth", since });
-      const events = await relayPost(grant);
+      const events = await relayPost(grant, {
+        baseUrl: productBase,
+        serviceSecret: relayServiceSecret,
+        communityId,
+      });
       if (!Array.isArray(events)) throw new Error("relay query returned an invalid body");
       events.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
       for (const event of events) {

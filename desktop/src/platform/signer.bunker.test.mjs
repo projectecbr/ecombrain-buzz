@@ -39,9 +39,11 @@ test("bunker signer binds one ephemeral client and delegates signing", async () 
         JSON.stringify({
           identityPubkey: "b".repeat(64),
           expiresAt: Date.now() + 60_000,
+          relayUrl: "wss://app.ecombrain.io/teams/relay",
+          relayAuthUrl: "wss://tenant-1.teams.ecombrain.internal",
           bunker: {
             pubkey: "e".repeat(64),
-            relays: ["wss://app.ecombrain.io/teams/relay"],
+            relays: ["wss://app.ecombrain.io/teams/bunker"],
             secret: "s".repeat(43),
           },
         }),
@@ -78,6 +80,10 @@ test("bunker signer binds one ephemeral client and delegates signing", async () 
     ["decrypt", "b".repeat(64), "ciphertext"],
   ]);
   assert.ok(storage.values.has(BUNKER_SESSION_KEY));
+  assert.match(
+    storage.values.get(BUNKER_SESSION_KEY),
+    /tenant-1\.teams\.ecombrain\.internal/,
+  );
   assert.ok(
     !storage.values.get(BUNKER_SESSION_KEY).includes("b".repeat(64 * 2)),
   );
@@ -93,9 +99,11 @@ test("bunker signer rejects an identity mismatch and clears the session", async 
         JSON.stringify({
           identityPubkey: "b".repeat(64),
           expiresAt: Date.now() + 60_000,
+          relayUrl: "wss://app.ecombrain.io/teams/relay",
+          relayAuthUrl: "wss://tenant-1.teams.ecombrain.internal",
           bunker: {
             pubkey: "e".repeat(64),
-            relays: ["wss://app.ecombrain.io/teams/relay"],
+            relays: ["wss://app.ecombrain.io/teams/bunker"],
             secret: "s".repeat(43),
           },
         }),

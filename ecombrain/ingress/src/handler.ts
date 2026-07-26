@@ -3,19 +3,23 @@ const SESSION_TOKEN = /^[A-Za-z0-9_-]{43}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const SERVICE_AUDIENCE = /^teams-relay-service:(identity|agent|scheduler):([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i;
+const OPERATOR_AUDIENCE = /^teams-relay-operator:[0-9a-f]{64}$/i;
 const COMMUNITY_HOST =
   /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
-type RelayNamespace = {
+type ContainerNamespace = {
   idFromName(name: string): unknown;
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 };
 
 export type IngressEnv = {
-  RELAY: RelayNamespace;
+  RELAY: ContainerNamespace;
+  IDENTITY_BRIDGE: ContainerNamespace;
   TEAMS_INGRESS_SERVICE_SECRET: string;
   TEAMS_PRODUCT_API_URL: string;
   TEAMS_RELAY_SERVICE_SECRET: string;
+  TEAMS_OPERATOR_SERVICE_SECRET: string;
+  TEAMS_BUNKER_PUBKEY: string;
 };
 
 function hex(bytes: ArrayBuffer): string {
@@ -80,12 +84,13 @@ export async function serviceHeaders(input: {
   secret: string;
   url: string;
   body: string;
+  subject?: "relay" | "operator";
   now?: number;
   requestId?: string;
 }): Promise<Record<string, string>> {
   const issuedAt = Math.floor((input.now ?? Date.now()) / 1_000);
   const expiresAt = issuedAt + 30;
-  const audience = "teams-ingress:relay";
+  const audience = `teams-ingress:${input.subject ?? "relay"}`;
   const requestId = input.requestId ?? crypto.randomUUID();
   const bodyHash = await digest(input.body);
   const canonical = [
@@ -105,6 +110,43 @@ export async function serviceHeaders(input: {
     "X-Teams-Service-Expires-At": String(expiresAt),
     "X-Teams-Service-Request-Id": requestId,
     "X-Teams-Service-Body-Sha256": bodyHash,
+  };
+}
+
+export async function operatorServiceHeaders(input: {
+  secret: string;
+  bunkerPubkey: string;
+  method: string;
+  url: string;
+  body?: string;
+  now?: number;
+  requestId?: string;
+}): Promise<Record<string, string>> {
+  const issuedAt = Math.floor((input.now ?? Date.now()) / 1_000);
+  const expiresAt = issuedAt + 30;
+  const audience = `teams-relay-operator:${input.bunkerPubkey.toLowerCase()}`;
+  if (!OPERATOR_AUDIENCE.test(audience) || input.secret.length < 32) {
+    throw new Error("invalid relay operator scope");
+  }
+  const requestId = input.requestId ?? crypto.randomUUID();
+  const bodyHash = await digest(input.body ?? "");
+  const url = new URL(input.url);
+  const canonical = [
+    input.method.toUpperCase(),
+    `${url.pathname}${url.search}`,
+    audience,
+    issuedAt,
+    expiresAt,
+    requestId,
+    bodyHash,
+  ].join("\n");
+  return {
+    "X-Teams-Operator-Authorization": `Teams-HMAC ${await hmac(input.secret, canonical)}`,
+    "X-Teams-Operator-Audience": audience,
+    "X-Teams-Operator-Issued-At": String(issuedAt),
+    "X-Teams-Operator-Expires-At": String(expiresAt),
+    "X-Teams-Operator-Request-Id": requestId,
+    "X-Teams-Operator-Body-Sha256": bodyHash,
   };
 }
 
@@ -204,6 +246,50 @@ async function verifyRelayServiceRequest(
   };
 }
 
+async function verifyOperatorServiceRequest(
+  request: Request,
+  secret: string,
+  bunkerPubkey: string,
+): Promise<{ audience: string; requestId: string; expiresAt: number } | null> {
+  const authorization = request.headers.get("x-teams-operator-authorization") ?? "";
+  const signature = authorization.startsWith("Teams-HMAC ")
+    ? authorization.slice("Teams-HMAC ".length)
+    : "";
+  const audience = request.headers.get("x-teams-operator-audience") ?? "";
+  const issuedAt = Number(request.headers.get("x-teams-operator-issued-at"));
+  const expiresAt = Number(request.headers.get("x-teams-operator-expires-at"));
+  const requestId = request.headers.get("x-teams-operator-request-id") ?? "";
+  const bodyHash = request.headers.get("x-teams-operator-body-sha256") ?? "";
+  const now = Math.floor(Date.now() / 1_000);
+  if (
+    secret.length < 32 ||
+    !OPERATOR_AUDIENCE.test(audience) ||
+    audience !== `teams-relay-operator:${bunkerPubkey.toLowerCase()}` ||
+    !REQUEST_ID.test(requestId) ||
+    !SHA256.test(bodyHash) ||
+    !Number.isSafeInteger(issuedAt) ||
+    !Number.isSafeInteger(expiresAt) ||
+    issuedAt > now + 15 ||
+    expiresAt < now - 15 ||
+    expiresAt <= issuedAt ||
+    expiresAt - issuedAt > 60
+  ) return null;
+  if (await digestBytes(await request.clone().arrayBuffer()) !== bodyHash) return null;
+  const url = new URL(request.url);
+  const canonical = [
+    request.method.toUpperCase(),
+    `${url.pathname}${url.search}`,
+    audience,
+    issuedAt,
+    expiresAt,
+    requestId,
+    bodyHash,
+  ].join("\n");
+  return await verifyHmac(secret, canonical, signature)
+    ? { audience, requestId, expiresAt }
+    : null;
+}
+
 function sessionToken(request: Request): string | null {
   const value = (request.headers.get("cookie") ?? "")
     .split(";")
@@ -227,6 +313,24 @@ function relayServicePath(pathname: string): string | null {
     return pathname.slice("/teams/service/relay".length);
   }
   return null;
+}
+
+function operatorServicePath(pathname: string): string | null {
+  if (pathname === "/teams/service/operator/communities") {
+    return "/operator/communities";
+  }
+  if (pathname === "/teams/service/operator/communities/availability") {
+    return "/operator/communities/availability";
+  }
+  return null;
+}
+
+function isBunkerPath(pathname: string): boolean {
+  return pathname === "/teams/bunker";
+}
+
+function isIdentityControlPath(pathname: string): boolean {
+  return pathname === "/teams/service/identity/provision";
 }
 
 function error(status: number, message: string): Response {
@@ -259,6 +363,12 @@ function relayRequest(
     "x-teams-relay-expires-at",
     "x-teams-relay-request-id",
     "x-teams-relay-body-sha256",
+    "x-teams-operator-authorization",
+    "x-teams-operator-audience",
+    "x-teams-operator-issued-at",
+    "x-teams-operator-expires-at",
+    "x-teams-operator-request-id",
+    "x-teams-operator-body-sha256",
   ])
     headers.delete(name);
 
@@ -275,6 +385,99 @@ function relayRequest(
   return new Request(relayUrl, init);
 }
 
+function bunkerRequest(request: Request): Request {
+  const headers = new Headers(request.headers);
+  for (const name of [
+    "cookie",
+    "forwarded",
+    "x-forwarded-host",
+    "x-original-host",
+    "x-spike-secret",
+    "x-spike-tenant-override",
+    "x-teams-tenant",
+    "x-tenant-id",
+    "x-teams-relay-authorization",
+    "x-teams-relay-audience",
+    "x-teams-relay-issued-at",
+    "x-teams-relay-expires-at",
+    "x-teams-relay-request-id",
+    "x-teams-relay-body-sha256",
+  ])
+    headers.delete(name);
+  return new Request("http://identity-bridge/", {
+    method: "GET",
+    headers,
+    redirect: "manual",
+  });
+}
+
+function identityControlRequest(request: Request): Request {
+  const headers = new Headers(request.headers);
+  for (const name of [
+    "cookie",
+    "forwarded",
+    "host",
+    "x-forwarded-host",
+    "x-original-host",
+    "x-spike-secret",
+    "x-spike-tenant-override",
+    "x-teams-tenant",
+    "x-tenant-id",
+  ]) headers.delete(name);
+  const init: RequestInit = {
+    method: "POST",
+    headers,
+    body: request.body,
+    redirect: "manual",
+  };
+  (init as RequestInit & { duplex: "half" }).duplex = "half";
+  return new Request("http://identity-bridge/provision", init);
+}
+
+async function validateBrowserSession(
+  request: Request,
+  secret: string,
+  productOrigin: URL,
+  fetcher: typeof fetch,
+): Promise<{ communityHost: string } | Response> {
+  const token = sessionToken(request);
+  if (!token) return error(401, "Unauthorized");
+  const productUrl = new URL(
+    "/api/internal/teams/ingress/session",
+    productOrigin,
+  );
+  const body = JSON.stringify({ token });
+  let response: Response;
+  try {
+    response = await fetcher(productUrl, {
+      method: "POST",
+      headers: await serviceHeaders({
+        secret,
+        url: productUrl.toString(),
+        body,
+      }),
+      body,
+      signal: AbortSignal.timeout(5_000),
+    });
+  } catch {
+    return error(503, "Teams session unavailable");
+  }
+  if (!response.ok) {
+    return error(
+      response.status === 401 ? 401 : 503,
+      response.status === 401 ? "Unauthorized" : "Teams session unavailable",
+    );
+  }
+  const session = (await response.json().catch(() => null)) as {
+    communityHost?: unknown;
+  } | null;
+  return session &&
+    typeof session.communityHost === "string" &&
+    COMMUNITY_HOST.test(session.communityHost)
+    ? { communityHost: session.communityHost }
+    : error(503, "Teams session unavailable");
+}
+
 export function createIngressHandler(fetcher: typeof fetch = fetch) {
   return async function handle(
     request: Request,
@@ -283,7 +486,10 @@ export function createIngressHandler(fetcher: typeof fetch = fetch) {
     const incomingUrl = new URL(request.url);
     const browserPath = relayPath(incomingUrl.pathname);
     const servicePath = relayServicePath(incomingUrl.pathname);
-    if (!browserPath && !servicePath) return error(404, "Not found");
+    const operatorPath = operatorServicePath(incomingUrl.pathname);
+    const bunker = isBunkerPath(incomingUrl.pathname);
+    const identityControl = isIdentityControlPath(incomingUrl.pathname);
+    if (!browserPath && !servicePath && !operatorPath && !bunker && !identityControl) return error(404, "Not found");
 
     const secret = env.TEAMS_INGRESS_SERVICE_SECRET?.trim();
     const productBase = env.TEAMS_PRODUCT_API_URL?.trim();
@@ -299,10 +505,67 @@ export function createIngressHandler(fetcher: typeof fetch = fetch) {
     if (productOrigin.protocol !== "https:") {
       return error(503, "Teams ingress unavailable");
     }
+    if (identityControl) {
+      if (request.method !== "POST") return error(405, "Method not allowed");
+      const bridge = env.IDENTITY_BRIDGE?.get(
+        env.IDENTITY_BRIDGE.idFromName("identity-bridge-singleton"),
+      );
+      return bridge
+        ? bridge.fetch(identityControlRequest(request))
+        : error(503, "Teams provisioning unavailable");
+    }
+    if (bunker) {
+      if (request.method !== "GET" || request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+        return error(400, "WebSocket upgrade required");
+      }
+      const session = await validateBrowserSession(
+        request,
+        secret,
+        productOrigin,
+        fetcher,
+      );
+      if (session instanceof Response) return session;
+      const bridge = env.IDENTITY_BRIDGE?.get(
+        env.IDENTITY_BRIDGE.idFromName("identity-bridge-singleton"),
+      );
+      return bridge
+        ? bridge.fetch(bunkerRequest(request))
+        : error(503, "Teams signer unavailable");
+    }
     let path: string;
     let communityHost: string;
 
-    if (servicePath) {
+    if (operatorPath) {
+      const verified = await verifyOperatorServiceRequest(
+        request,
+        env.TEAMS_OPERATOR_SERVICE_SECRET?.trim() ?? "",
+        env.TEAMS_BUNKER_PUBKEY?.trim() ?? "",
+      );
+      if (!verified) return error(401, "Unauthorized");
+      const productUrl = new URL("/api/internal/teams/ingress/service", productOrigin);
+      const body = JSON.stringify(verified);
+      let response: Response;
+      try {
+        response = await fetcher(productUrl, {
+          method: "POST",
+          headers: await serviceHeaders({
+            secret,
+            url: productUrl.toString(),
+            body,
+            subject: "operator",
+          }),
+          body,
+          signal: AbortSignal.timeout(5_000),
+        });
+      } catch {
+        return error(503, "Teams operator unavailable");
+      }
+      if (!response.ok) {
+        return error(response.status === 401 ? 401 : 503, "Teams operator unavailable");
+      }
+      path = operatorPath;
+      communityHost = "operator.teams.ecombrain.internal";
+    } else if (servicePath) {
       const verified = await verifyRelayServiceRequest(
         request,
         env.TEAMS_RELAY_SERVICE_SECRET?.trim() ?? "",
@@ -353,46 +616,13 @@ export function createIngressHandler(fetcher: typeof fetch = fetch) {
       path = servicePath;
       communityHost = binding.communityHost;
     } else {
-      const token = sessionToken(request);
-      if (!token) return error(401, "Unauthorized");
-      const productUrl = new URL(
-        "/api/internal/teams/ingress/session",
+      const session = await validateBrowserSession(
+        request,
+        secret,
         productOrigin,
+        fetcher,
       );
-      const body = JSON.stringify({ token });
-      let response: Response;
-      try {
-        response = await fetcher(productUrl, {
-          method: "POST",
-          headers: await serviceHeaders({
-            secret,
-            url: productUrl.toString(),
-            body,
-          }),
-          body,
-          signal: AbortSignal.timeout(5_000),
-        });
-      } catch {
-        return error(503, "Teams session unavailable");
-      }
-      if (!response.ok) {
-        return error(
-          response.status === 401 ? 401 : 503,
-          response.status === 401
-            ? "Unauthorized"
-            : "Teams session unavailable",
-        );
-      }
-      const session = (await response.json().catch(() => null)) as {
-        communityHost?: unknown;
-      } | null;
-      if (
-        !session ||
-        typeof session.communityHost !== "string" ||
-        !COMMUNITY_HOST.test(session.communityHost)
-      ) {
-        return error(503, "Teams session unavailable");
-      }
+      if (session instanceof Response) return session;
       path = browserPath as string;
       communityHost = session.communityHost;
     }

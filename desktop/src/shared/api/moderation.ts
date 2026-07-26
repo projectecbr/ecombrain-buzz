@@ -1,5 +1,6 @@
 import { relayClient } from "@/shared/api/relayClient";
 import { getRelayHttpUrl, signRelayEvent } from "@/shared/api/tauri";
+import { relayAuthHttpUrl } from "@/platform/relay-auth-url";
 import {
   KIND_MODERATION_BAN,
   KIND_MODERATION_RESOLVE_REPORT,
@@ -220,11 +221,12 @@ export async function resolveReport(input: {
  * signed `u` and the fetched URL are guaranteed identical.
  */
 async function nip98GetHeader(url: string): Promise<string> {
+  const authUrl = relayAuthHttpUrl(url);
   const authEvent = await signRelayEvent({
     kind: NIP98_KIND,
     content: "",
     tags: [
-      ["u", url],
+      ["u", authUrl],
       ["method", "GET"],
       ["nonce", crypto.randomUUID()],
     ],

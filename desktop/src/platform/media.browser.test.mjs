@@ -61,3 +61,27 @@ test("browser media rejects non-MP4 video before signing", async () => {
   );
   assert.equal(signed, false);
 });
+
+test("browser media rejects an oversized upload before signing or sending", async () => {
+  let touchedNetwork = false;
+  const media = createBrowserMedia({
+    baseUrl: "https://teams.example.com",
+    signer: {
+      getPublicKey: async () => "0".repeat(64),
+      signEvent: async () => {
+        touchedNetwork = true;
+        throw new Error("must not sign");
+      },
+    },
+    fetchFn: async () => {
+      touchedNetwork = true;
+      throw new Error("must not fetch");
+    },
+  });
+
+  await assert.rejects(
+    media.uploadBytes({ byteLength: 500 * 1024 * 1024 + 1 }, "clip.mp4"),
+    /500 MiB limit/,
+  );
+  assert.equal(touchedNetwork, false);
+});
