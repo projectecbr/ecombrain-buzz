@@ -1,5 +1,6 @@
 import { relayHttpFromWs } from "@/shared/api/inviteHelpers";
 import { getRelayHttpUrl, signRelayEvent } from "@/shared/api/tauri";
+import { relayAuthHttpUrl } from "@/platform/relay-auth-url";
 
 // Relay invite data layer. Both endpoints are NIP-98-authed HTTP POSTs
 // (mirrors the read path in moderation.ts, plus the payload tag the relay
@@ -55,11 +56,12 @@ async function sha256Hex(text: string): Promise<string> {
  * against the exact request URL — so the caller finalizes both before signing.
  */
 async function nip98PostHeader(url: string, body: string): Promise<string> {
+  const authUrl = relayAuthHttpUrl(url);
   const authEvent = await signRelayEvent({
     kind: NIP98_KIND,
     content: "",
     tags: [
-      ["u", url],
+      ["u", authUrl],
       ["method", "POST"],
       ["payload", await sha256Hex(body)],
       ["nonce", crypto.randomUUID()],

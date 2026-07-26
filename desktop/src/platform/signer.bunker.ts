@@ -8,6 +8,7 @@ import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import type { RelayEvent } from "@/shared/api/types";
 
 import type { PlatformSigner, SignEventInput } from "./types";
+import { clearRelayBinding, saveRelayBinding } from "./relay-auth-url";
 
 export const BUNKER_SESSION_KEY = "ecombrain-teams-bunker-v1";
 const HEX_PUBKEY = /^[0-9a-f]{64}$/;
@@ -27,6 +28,8 @@ type StoredBunkerSession = {
   clientSecret: string;
   identityPubkey: string;
   expiresAt: number;
+  relayUrl: string;
+  relayAuthUrl: string;
   bunker: BunkerPointer;
 };
 
@@ -86,11 +89,24 @@ function parseStoredSession(value: string | null): StoredBunkerSession | null {
       HEX_PUBKEY.test(session.identityPubkey) &&
       typeof session.expiresAt === "number" &&
       session.expiresAt > Date.now() &&
+      typeof session.relayUrl === "string" &&
+      validRelayUrl(session.relayUrl) &&
+      typeof session.relayAuthUrl === "string" &&
+      validRelayUrl(session.relayAuthUrl) &&
       validPointer(session.bunker)
       ? (session as StoredBunkerSession)
       : null;
   } catch {
     return null;
+  }
+}
+
+function validRelayUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "wss:" || url.protocol === "ws:";
+  } catch {
+    return false;
   }
 }
 
@@ -135,12 +151,22 @@ async function issueBinding(
       clientSecret: bytesToHex(clientSecret),
       identityPubkey: payload.identityPubkey ?? "",
       expiresAt: payload.expiresAt ?? 0,
+      relayUrl: payload.relayUrl ?? "",
+      relayAuthUrl: payload.relayAuthUrl ?? "",
       bunker: payload.bunker as BunkerPointer,
     };
     if (!parseStoredSession(JSON.stringify(session))) {
       throw new Error("Teams signer setup returned an invalid binding");
     }
     storage?.setItem(BUNKER_SESSION_KEY, JSON.stringify(session));
+    saveRelayBinding(
+      {
+        transportUrl: session.relayUrl,
+        authUrl: session.relayAuthUrl,
+        expiresAt: session.expiresAt,
+      },
+      storage,
+    );
     return session;
   } finally {
     clientSecret.fill(0);
@@ -155,6 +181,7 @@ async function loadClient(options: BunkerSignerOptions): Promise<BunkerClient> {
   );
   if (!session) {
     storage?.removeItem(BUNKER_SESSION_KEY);
+    clearRelayBinding(storage);
     session = await issueBinding(
       options.fetchFn ?? globalThis.fetch.bind(globalThis),
       storage,
@@ -175,6 +202,7 @@ async function loadClient(options: BunkerSignerOptions): Promise<BunkerClient> {
   } catch (error) {
     await client.close?.().catch(() => undefined);
     storage?.removeItem(BUNKER_SESSION_KEY);
+    clearRelayBinding(storage);
     throw error;
   } finally {
     clientSecret.fill(0);

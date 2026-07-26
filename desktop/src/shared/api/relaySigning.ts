@@ -5,6 +5,7 @@
 // call sites keep their existing import.
 
 import { getSigner } from "@/platform";
+import { relayAuthWsUrl } from "@/platform/relay-auth-url";
 import type { RelayEvent } from "@/shared/api/types";
 
 export async function signRelayEvent(input: {
@@ -27,6 +28,7 @@ export async function createAuthEvent(input: {
   challenge: string;
   relayUrl: string;
 }): Promise<RelayEvent> {
+  const authUrl = relayAuthWsUrl(input.relayUrl);
   // The Rust `create_auth_event` command built exactly this event (kind
   // 22242, empty content, relay + challenge tags) and signed it with the
   // same key as `sign_event` — routing it through the signer seam produces
@@ -35,7 +37,7 @@ export async function createAuthEvent(input: {
     kind: 22242,
     content: "",
     tags: [
-      ["relay", input.relayUrl],
+      ["relay", authUrl],
       ["challenge", input.challenge],
     ],
   });

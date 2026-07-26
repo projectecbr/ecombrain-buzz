@@ -6,6 +6,7 @@ import { runCheckins, serviceHeaders } from "./worker.mjs";
 const env = {
   TEAMS_PRODUCT_API_URL: "https://app.ecombrain.io",
   TEAMS_SCHEDULER_SERVICE_SECRET: "s".repeat(32),
+  TEAMS_RELAY_SERVICE_SECRET: "r".repeat(32),
 };
 const due = {
   teamId: "11111111-1111-4111-8111-111111111111",
@@ -15,6 +16,7 @@ const due = {
   scheduledFor: "2026-07-25T09:00:00.000Z",
   fireId: "f".repeat(64),
   leadAgentPubkey: "a".repeat(64),
+  communityId: "44444444-4444-4444-8444-444444444444",
 };
 
 test("service authentication binds the product path and body", async () => {
@@ -34,7 +36,7 @@ test("a durable claim is delivered once and acknowledged after relay acceptance"
   const fetcher = async (url, init) => {
     const body = JSON.parse(init.body);
     calls.push({ url, body, headers: init.headers });
-    if (url === due.hookUrl) return { ok: true, status: 202 };
+    if (String(url).includes("/teams/service/relay/hooks/")) return { ok: true, status: 202 };
     if (body.action === "claim_due") return { ok: true, json: async () => ({ due: [due] }) };
     return { ok: true, json: async () => ({ acknowledged: true }) };
   };
@@ -42,6 +44,8 @@ test("a durable claim is delivered once and acknowledged after relay acceptance"
   assert.deepEqual(await runCheckins(env, fetcher), { claimed: 1, delivered: 1, failed: 0 });
   assert.deepEqual(calls.map((call) => call.body.action ?? "webhook"), ["claim_due", "webhook", "ack_delivery"]);
   assert.equal(calls[1].headers["X-Webhook-Secret"], due.hookSecret);
+  assert.equal(calls[1].headers["X-Teams-Relay-Audience"], `teams-relay-service:scheduler:${due.communityId}`);
+  assert.equal(String(calls[1].url), "https://app.ecombrain.io/teams/service/relay/hooks/33333333-3333-4333-8333-333333333333");
   assert.equal(calls[1].body.leadAgentPubkey, due.leadAgentPubkey);
 });
 
@@ -50,7 +54,7 @@ test("a rejected relay delivery is retried later and never acknowledged", async 
   const fetcher = async (url, init) => {
     const body = JSON.parse(init.body);
     actions.push(body.action ?? "webhook");
-    if (url === due.hookUrl) return { ok: false, status: 503 };
+    if (String(url).includes("/teams/service/relay/hooks/")) return { ok: false, status: 503 };
     return { ok: true, json: async () => ({ due: [due] }) };
   };
 

@@ -26,10 +26,15 @@ const { chromium } = desktopRequire("@playwright/test");
     pageErrors.push(String(err.stack || err).slice(0, 800)),
   );
   page.on("requestfailed", (req) =>
-    failedRequests.push(`${req.method()} ${req.url()} :: ${req.failure()?.errorText}`),
+    failedRequests.push(
+      `${req.method()} ${req.url()} :: ${req.failure()?.errorText}`,
+    ),
   );
 
-  await page.goto("http://localhost:4599/", { waitUntil: "load", timeout: 30000 });
+  await page.goto(process.env.TEAMS_WEB_URL || "http://127.0.0.1:4599/teams/", {
+    waitUntil: "load",
+    timeout: 30000,
+  });
   await page.waitForTimeout(10000);
 
   const rootHtml = await page.evaluate(() => {
@@ -44,14 +49,21 @@ const { chromium } = desktopRequire("@playwright/test");
   console.log("=== ROOT ===");
   console.log(JSON.stringify(rootHtml, null, 2));
   console.log("=== PAGE ERRORS (uncaught) ===");
-  pageErrors.forEach((e) => console.log(e, "\n---"));
+  pageErrors.forEach((e) => {
+    console.log(e, "\n---");
+  });
   console.log(`(${pageErrors.length} total)`);
   console.log("=== CONSOLE ERRORS/WARNINGS ===");
-  consoleErrors.forEach((e) => console.log(e, "\n---"));
+  consoleErrors.forEach((e) => {
+    console.log(e, "\n---");
+  });
   console.log(`(${consoleErrors.length} total)`);
   console.log("=== FAILED REQUESTS ===");
-  failedRequests.forEach((e) => console.log(e));
+  failedRequests.forEach((e) => {
+    console.log(e);
+  });
   console.log(`(${failedRequests.length} total)`);
 
   await browser.close();
+  if (rootHtml.childCount < 1 || pageErrors.length > 0) process.exitCode = 1;
 })();

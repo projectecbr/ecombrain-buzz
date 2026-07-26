@@ -8,14 +8,24 @@
       "image": "ghcr.io/projectecbr/ecombrain-buzz-relay:0.2.0",
       "instance_type": "standard-1",
       "max_instances": 1
+    },
+    {
+      "class_name": "IdentityBridgeContainer",
+      "image": "ghcr.io/projectecbr/ecombrain-teams-identity-bridge:local-ready",
+      "instance_type": "standard-1",
+      "max_instances": 1
     }
   ],
   "durable_objects": {
     "bindings": [
-      { "name": "RELAY", "class_name": "RelayContainer" }
+      { "name": "RELAY", "class_name": "RelayContainer" },
+      { "name": "IDENTITY_BRIDGE", "class_name": "IdentityBridgeContainer" }
     ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RelayContainer"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["RelayContainer"] },
+    { "tag": "v2", "new_sqlite_classes": ["IdentityBridgeContainer"] }
+  ],
   "vars": {
     "TEAMS_PRODUCT_API_URL": "https://app.ecombrain.io",
     "RELAY_OPERATOR_API_ORIGIN": "https://ecombrain-teams-spike.yannis-83d.workers.dev",

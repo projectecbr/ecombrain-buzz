@@ -36,10 +36,29 @@ export async function serviceHeaders({ secret, url, body, now = Date.now(), requ
   };
 }
 
+export async function relayServiceHeaders({ masterSecret, communityId, url, body, now = Date.now(), requestId = crypto.randomUUID() }) {
+  const issuedAt = Math.floor(now / 1_000);
+  const expiresAt = issuedAt + 30;
+  const audience = `teams-relay-service:scheduler:${communityId}`;
+  const bodyHash = await digest(body);
+  const derivedSecret = await hmac(masterSecret, audience);
+  const parsed = new URL(url);
+  const canonical = ["POST", `${parsed.pathname}${parsed.search}`, audience, issuedAt, expiresAt, requestId, bodyHash].join("\n");
+  return {
+    "X-Teams-Relay-Authorization": `Teams-HMAC ${await hmac(derivedSecret, canonical)}`,
+    "X-Teams-Relay-Audience": audience,
+    "X-Teams-Relay-Issued-At": String(issuedAt),
+    "X-Teams-Relay-Expires-At": String(expiresAt),
+    "X-Teams-Relay-Request-Id": requestId,
+    "X-Teams-Relay-Body-Sha256": bodyHash,
+  };
+}
+
 export async function runCheckins(env, fetcher = fetch) {
   const secret = env.TEAMS_SCHEDULER_SERVICE_SECRET?.trim();
+  const relaySecret = env.TEAMS_RELAY_SERVICE_SECRET?.trim();
   const baseUrl = env.TEAMS_PRODUCT_API_URL?.trim();
-  if (!secret || secret.length < 32 || !baseUrl) throw new Error("scheduler configuration is incomplete");
+  if (!secret || secret.length < 32 || !relaySecret || relaySecret.length < 32 || !baseUrl) throw new Error("scheduler configuration is incomplete");
   const productUrl = new URL("/api/internal/teams/checkins/rpc", baseUrl).toString();
   const productCall = async (payload) => {
     const body = JSON.stringify(payload);
@@ -63,11 +82,19 @@ export async function runCheckins(env, fetcher = fetch) {
       fireId: item.fireId,
       leadAgentPubkey: item.leadAgentPubkey,
     });
-    const delivered = await fetcher(item.hookUrl, {
+    const canonicalHook = new URL(item.hookUrl);
+    const transportHook = new URL(`/teams/service/relay${canonicalHook.pathname}${canonicalHook.search}`, baseUrl);
+    const delivered = await fetcher(transportHook, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Webhook-Secret": item.hookSecret,
+        ...await relayServiceHeaders({
+          masterSecret: relaySecret,
+          communityId: item.communityId,
+          url: transportHook,
+          body,
+        }),
       },
       body,
       signal: AbortSignal.timeout(15_000),
