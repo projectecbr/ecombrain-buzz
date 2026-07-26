@@ -11,12 +11,34 @@ Branch configs inherit all `stg` keys; the keys below are spike-specific overrid
 | `RELAY_OPERATOR_PUBKEYS` | generated keypair (openssl/nostr-tools, 2026-07-25) | Doppler `stg_teams` |
 | `OPERATOR_NSEC` | secret half of the same keypair (hex) | Doppler `stg_teams` + `/tmp/buzz-spike/operator-secret.hex` (0600) |
 | `RELAY_OPERATOR_API_ORIGIN` | `https://ecombrain-teams-spike.yannis-83d.workers.dev` (workers subdomain `yannis-83d`) | Doppler `stg_teams` |
+| `TEAMS_PRODUCT_API_URL` | Product origin used only for the ingress session-validation call | Worker vars (`wrangler.jsonc`) |
+| `TEAMS_INGRESS_SERVICE_SECRET` | 32+ byte HMAC secret shared only by the ingress Worker and product validation route | Worker secret + product runtime secret |
 | `BUZZ_BIND_ADDR` | `0.0.0.0:3000` (verified env name in `crates/buzz-relay/src/config.rs:225`; plan's `LISTEN_ADDR` was wrong) | Doppler `stg_teams` |
 | `BUZZ_HUDDLE_AUDIO_AVAILABLE` | `false` (huddle kill-switch, spec §3.1) | Doppler `stg_teams` |
 | `BUZZ_S3_ENDPOINT` | R2 S3 endpoint for account `2b4b7eb9…cf45` | Doppler `stg_teams` |
 | `BUZZ_S3_BUCKET` | `ecombrain-teams-media-staging` | Doppler `stg_teams` |
 | `BUZZ_S3_REGION` | `auto` (R2) | Doppler `stg_teams` |
 | `BUZZ_S3_ACCESS_KEY` / `BUZZ_S3_SECRET_KEY` | R2 API token — **BLOCKED**: R2 not enabled on the CF account; activation needs a payment method (see GO-NOGO / money-boundary report) | pending |
+
+## Continuation service contract
+
+These names are implemented locally but are not deployment proof:
+
+| Key | Scope | Required contract |
+|-----|-------|-------------------|
+| `TEAMS_BUNKER_PUBKEY` | Product | Public key derived from the identity bridge bunker key. Public value only. |
+| `TEAMS_BUNKER_SECRET_KEY` | Identity bridge | Private bunker transport key. Never copied into the product, browser, relay bindings, or logs. |
+| `TEAMS_IDENTITY_BRIDGE_SECRET` | Product + identity bridge | 32+ byte HMAC key for product RPC calls. Bound to the configured bunker public-key subject. |
+| `TEAMS_RELAY_URL` | Identity bridge | **UNRESOLVED FOR DEPLOYMENT:** must be a non-public/service-bound per-community WebSocket path. The cookie-only public ingress cannot authenticate the bridge and a query-string bearer token is forbidden. |
+| `TEAMS_COMMUNITY_ID` | One agent-bridge deployment | UUID of exactly one provisioned community. Used as the service audience subject, never accepted from an event or request body. |
+| `TEAMS_AGENT_SERVICE_SECRET` | Product | Master used only by the product to derive `HMAC(master, "teams-agent-bridge:<communityId>")`. |
+| `TEAMS_AGENT_SERVICE_SECRET` | One agent-bridge deployment | The derived key for that deployment's `TEAMS_COMMUNITY_ID`, not the product master. |
+| `TEAMS_SCHEDULER_SERVICE_SECRET` | Product + scheduler Worker | 32+ byte HMAC key scoped to `teams-checkin-scheduler:control`. |
+| `TEAMS_PRODUCT_API_URL` | Ingress + all bridges/workers | HTTPS product origin. No embedded path, query credential, or tenant selector. |
+
+The identity bridge, agent bridge, and scheduler still need a locked authenticated
+service-to-relay topology before Cloudflare deployment. The browser cookie path
+alone is intentionally insufficient for server processes.
 
 ## Deviations from the plan discovered so far
 - Fork org is `projectecbr` (Hesk123 redirects there), fork: `projectecbr/ecombrain-buzz`.

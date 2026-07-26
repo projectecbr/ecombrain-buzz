@@ -1,5 +1,10 @@
 # Phase 2 Task 4 — invoke command map (Adapter C)
 
+> Historical implementation map: this document captured the Task 4a/4b split
+> before the July 25 recovery work. For current completion status, test evidence,
+> and remaining release blockers, use the product repository's
+> `2026-07-25-codex-audit-recovery-spec.md`.
+
 Every `invoke` command reachable from features that **survive** the Phase 2
 removals, grouped by domain, with the frontend wrapper, a 1-liner of the Rust
 behavior, and the browser strategy. Commands in removed features are listed

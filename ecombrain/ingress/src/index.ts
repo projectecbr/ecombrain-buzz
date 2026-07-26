@@ -1,17 +1,6 @@
-// EcomBrain Teams spike ingress Worker (Phase 0 Task 5).
-// Only public path to the relay: injects the synthetic tenant Host (Buzz's
-// native community tenancy, verified tenant.rs) and proxies WS+HTTP into the
-// unpatched relay container. Client-supplied Host headers never reach the relay.
-//
-// Relay env comes from Worker Secrets (wrangler secret put) + vars above,
-// passed to the container via envVars (CF Containers env mechanism, see
-// https://developers.cloudflare.com/containers/examples/env-vars-and-secrets/).
-// Required Worker Secrets: DATABASE_URL, REDIS_URL, BUZZ_S3_ACCESS_KEY,
-// BUZZ_S3_SECRET_KEY, RELAY_OPERATOR_PUBKEYS.
 import { Container } from "@cloudflare/containers";
 import { env } from "cloudflare:workers";
-
-const TENANT_HOST = "tenant-spike.teams.ecombrain.internal"; // provisioned via verify.mjs provision
+import { createIngressHandler } from "./handler";
 
 export class RelayContainer extends Container {
   defaultPort = 3000;
@@ -34,24 +23,5 @@ export class RelayContainer extends Container {
 }
 
 export default {
-  async fetch(request: Request, env: any): Promise<Response> {
-    const url = new URL(request.url);
-    const headers = new Headers(request.headers);
-    // Spike-only test backdoor (REMOVED in production): lets verify.mjs bind a
-    // second tenant for the cross-tenant 404 check. Requires the test secret.
-    let host = TENANT_HOST;
-    const override = request.headers.get("x-spike-tenant-override");
-    if (override && env.SPIKE_TEST_SECRET && request.headers.get("x-spike-secret") === env.SPIKE_TEST_SECRET) {
-      host = override;
-    }
-    headers.set("Host", host); // Buzz resolves community from Host (verified, tenant.rs)
-    headers.delete("x-spike-tenant-override");
-    headers.delete("x-spike-secret");
-    const relay = env.RELAY.get(env.RELAY.idFromName("relay-singleton"));
-    return relay.fetch(new Request(new URL(url.pathname + url.search, "http://relay"), {
-      method: request.method,
-      headers,
-      body: request.body,
-    }));
-  },
+  fetch: createIngressHandler(),
 };
