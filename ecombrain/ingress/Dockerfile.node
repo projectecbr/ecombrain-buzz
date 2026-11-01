@@ -1,0 +1,11 @@
+# Teams ingress on Node, for a VPS behind a tunnel (the Cloudflare worker build stays in index.ts).
+FROM node:24-slim
+
+WORKDIR /app
+COPY package.json ./
+COPY src/handler.ts src/node-server.ts src/node-main.ts ./src/
+
+USER node
+EXPOSE 8787
+ENV TEAMS_INGRESS_BIND=0.0.0.0
+CMD ["node", "src/node-main.ts"]
