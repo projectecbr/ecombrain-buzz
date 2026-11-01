@@ -83,8 +83,13 @@ function bodyLength(message: IncomingMessage): number | null | undefined {
   return length > 0 ? length : undefined;
 }
 
-function isServicePath(url: string): boolean {
-  return url.startsWith("/teams/service/");
+/** Classified on the normalised path, the same one handler.ts routes on (`/teams/relay/../service/...` is a service path). */
+function isServicePath(raw: string, publicOrigin: URL): boolean {
+  try {
+    return new URL(raw, publicOrigin).pathname.startsWith("/teams/service/");
+  } catch {
+    return false; // toRequest refuses it next
+  }
 }
 
 /** Builds the WHATWG request, or the error response for a target or body this ingress refuses. */
@@ -112,7 +117,8 @@ function endToEndHeaders(request: Request): Record<string, string> {
   const listed = (request.headers.get("connection") ?? "").split(",").map((name) => name.trim().toLowerCase()).filter(Boolean);
   const headers: Record<string, string> = {};
   request.headers.forEach((value, name) => {
-    if (HOP_BY_HOP.includes(name) || listed.includes(name)) return;
+    // Host is the handler's tenant binding: a client listing it in Connection must not remove it.
+    if (HOP_BY_HOP.includes(name) || (listed.includes(name) && name !== "host")) return;
     headers[name] = value;
   });
   return headers;
@@ -250,7 +256,7 @@ export function createNodeIngress(options: NodeIngressOptions): Server {
   let serviceInFlight = 0;
 
   async function decide(message: IncomingMessage): Promise<Target | Response> {
-    const service = isServicePath(message.url ?? "");
+    const service = isServicePath(message.url ?? "", publicOrigin);
     const built = toRequest(message, publicOrigin, service ? maxServiceBytes : maxBytes);
     if (built instanceof Response) return built;
     // handler.ts buffers a signed body before it checks the signature: bound how much of that runs at once.
@@ -288,8 +294,10 @@ export function createNodeIngress(options: NodeIngressOptions): Server {
       buffered.push(chunk);
     };
     socket.on("data", onData);
-    socket.on("end", () => socket.destroy());
-    const early = () => { socket.off("data", onData); return Buffer.concat(buffered); };
+    const leftEarly = () => socket.destroy();
+    socket.on("end", leftEarly);
+    // Admitted: stop buffering and hand half-close handling to pipeSockets.
+    const early = () => { socket.off("data", onData); socket.off("end", leftEarly); return Buffer.concat(buffered); };
     // WebSocket only, and no body on the upgrade request (Cloudflare only ever handed the worker these).
     if (req.headers.upgrade?.toLowerCase() !== "websocket" || bodyLength(req) !== undefined) {
       return void writeSocketResponse(socket, jsonError(400, "Bad request"));

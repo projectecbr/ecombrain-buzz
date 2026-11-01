@@ -248,7 +248,12 @@ describe("Teams ingress on Node: framing and teardown", () => {
         res.end("ok");
       });
     });
-    probeServer.on("upgrade", () => { probe.upgrades += 1; });
+    probeServer.on("upgrade", (req, socket) => {
+      probe.upgrades += 1;
+      if (req.url !== "/halfclose") return;
+      socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n");
+      socket.on("end", () => setTimeout(() => socket.end("late reply"), 100)); // answers after the client half-closed
+    });
     silentServer = (await import("node:net")).createServer((socket) => {
       probe.silentOpen += 1;
       socket.on("close", () => { probe.silentOpen -= 1; });
@@ -376,6 +381,38 @@ describe("Teams ingress on Node: framing and teardown", () => {
     assert.match(response, /^HTTP\/1\.1 504 Gateway Timeout/);
     await wait(100);
     assert.equal(probe.silentOpen, 0);
+  });
+
+  it("caps service bodies on the normalised path, as the handler routes them", async () => {
+    const headers = await relayServiceHeaders({ serviceSecret: "w".repeat(64), service: "identity", communityId, method: "POST",
+      url: "https://teams.example.test/teams/service/relay/events", body: "{}" });
+    const head = Object.entries(headers).filter(([name]) => name.toLowerCase() !== "content-type").map(([name, value]) => `${name}: ${value}\r\n`).join("");
+    for (const path of ["/teams/relay/../service/relay/events", "/teams/relay/%2e%2e/service/relay/events"]) {
+      const response = await raw(`POST ${path} HTTP/1.1\r\nHost: teams.example.test\r\n${head}Content-Length: 2048\r\nConnection: close\r\n\r\n${"x".repeat(2048)}`);
+      assert.match(response, /^HTTP\/1\.1 413 /, path);
+    }
+  });
+
+  it("keeps the bound Host when the client lists Host in Connection", async () => {
+    const before = probe.requests.length;
+    await raw(`GET /teams/relay/h HTTP/1.1\r\n${auth}Connection: host, close\r\n\r\n`);
+    await wait(100);
+    assert.equal(probe.requests.slice(before)[0].host, communityHost);
+  });
+
+  it("delivers the upstream reply after the client half-closes a WebSocket", async () => {
+    const received = await new Promise((resolve) => {
+      const socket = connect(fastPort, "127.0.0.1", { allowHalfOpen: true });
+      const chunks = [];
+      socket.on("data", (chunk) => {
+        chunks.push(chunk);
+        if (chunks.length === 1) socket.end(); // half-close right after the 101
+      });
+      socket.on("close", () => resolve(Buffer.concat(chunks).toString()));
+      socket.write(`GET /teams/relay/halfclose HTTP/1.1\r\n${auth}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    });
+    assert.match(received, /^HTTP\/1\.1 101 /);
+    assert.match(received, /late reply$/);
   });
 
   it("rejects backslash targets", async () => {
