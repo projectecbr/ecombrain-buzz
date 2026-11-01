@@ -224,8 +224,6 @@ async function verifyRelayServiceRequest(
   ) {
     return null;
   }
-  const actualBodyHash = await digestBytes(await request.clone().arrayBuffer());
-  if (actualBodyHash !== bodyHash) return null;
   const url = new URL(request.url);
   const canonical = [
     request.method.toUpperCase(),
@@ -238,6 +236,9 @@ async function verifyRelayServiceRequest(
   ].join("\n");
   const derivedSecret = await hmac(masterSecret, audience);
   if (!(await verifyHmac(derivedSecret, canonical, signature))) return null;
+  // The signature covers the declared hash, so unsigned callers are refused before their body is read.
+  const actualBodyHash = await digestBytes(await request.clone().arrayBuffer());
+  if (actualBodyHash !== bodyHash) return null;
   return {
     audience,
     communityId: audienceMatch[2].toLowerCase(),
@@ -274,7 +275,6 @@ async function verifyOperatorServiceRequest(
     expiresAt <= issuedAt ||
     expiresAt - issuedAt > 60
   ) return null;
-  if (await digestBytes(await request.clone().arrayBuffer()) !== bodyHash) return null;
   const url = new URL(request.url);
   const canonical = [
     request.method.toUpperCase(),
@@ -285,9 +285,9 @@ async function verifyOperatorServiceRequest(
     requestId,
     bodyHash,
   ].join("\n");
-  return await verifyHmac(secret, canonical, signature)
-    ? { audience, requestId, expiresAt }
-    : null;
+  if (!(await verifyHmac(secret, canonical, signature))) return null;
+  if (await digestBytes(await request.clone().arrayBuffer()) !== bodyHash) return null;
+  return { audience, requestId, expiresAt };
 }
 
 function sessionToken(request: Request): string | null {

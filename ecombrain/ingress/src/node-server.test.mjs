@@ -272,6 +272,7 @@ describe("Teams ingress on Node: framing and teardown", () => {
       maxServiceBodyBytes: 1024,
       upgradeHandshakeMs: 300,
       upstreamIdleMs: 1_000,
+      maxServiceInFlight: 2,
       fetcher: async (url) => {
         await wait(new URL(url).pathname.endsWith("/session") && slowSession ? 200 : 0);
         return product(url);
@@ -324,18 +325,43 @@ describe("Teams ingress on Node: framing and teardown", () => {
     assert.equal(probe.upgrades, before);
   });
 
+  async function serviceHead(serviceSecret) {
+    const headers = await relayServiceHeaders({ serviceSecret, service: "identity", communityId, method: "POST",
+      url: "https://teams.example.test/teams/service/relay/events", body: "{}" });
+    return Object.entries(headers).filter(([name]) => name.toLowerCase() !== "content-type").map(([name, value]) => `${name}: ${value}\r\n`).join("");
+  }
+  const derivedSecret = async () => (await import("node:crypto")).createHmac("sha256", relayServiceSecret)
+    .update(`teams-relay-service:identity:${communityId}`).digest("hex");
+
   it("caps signed service bodies before the handler buffers them", async () => {
     const productBefore = productCalls;
-    // Every service header well formed, the signature wrong: the handler would hash the body before refusing.
-    const headers = await relayServiceHeaders({ serviceSecret: "w".repeat(64), service: "identity", communityId, method: "POST",
-      url: "https://teams.example.test/teams/service/relay/events", body: "{}" });
-    const head = Object.entries(headers).filter(([name]) => name.toLowerCase() !== "content-type").map(([name, value]) => `${name}: ${value}\r\n`).join("");
+    // A valid signature over a small declared body, then an oversize one: refused before the product is asked.
+    const head = await serviceHead(await derivedSecret());
     const declared = await raw(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${head}Content-Length: 2048\r\nConnection: close\r\n\r\n${"x".repeat(2048)}`);
     assert.match(declared, /^HTTP\/1\.1 413 /);
     const chunk = "x".repeat(2048);
     const streamed = await raw(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${head}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n${chunk.length.toString(16)}\r\n${chunk}\r\n0\r\n\r\n`);
     assert.match(streamed, /^HTTP\/1\.1 413 /);
     assert.equal(productCalls, productBefore);
+  });
+
+  it("refuses unsigned service senders before their body, so idle ones never block a signed call", async () => {
+    const forged = await serviceHead("w".repeat(64)); // every header well formed, the signature wrong
+    const idle = await Promise.all([1, 2, 3].map(() => new Promise((resolve) => {
+      const socket = connect(fastPort, "127.0.0.1");
+      const reply = [];
+      socket.on("data", (chunk) => reply.push(chunk));
+      socket.on("error", () => {});
+      socket.write(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${forged}Content-Length: 1000\r\n\r\n`); // body never sent
+      setTimeout(() => resolve({ socket, reply }), 100);
+    })));
+    try {
+      const signed = await raw(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${await serviceHead(await derivedSecret())}Content-Length: 2\r\nConnection: close\r\n\r\n{}`);
+      assert.match(signed, /^HTTP\/1\.1 200 /);
+      for (const { reply } of idle) assert.match(Buffer.concat(reply).toString(), /^HTTP\/1\.1 401 /);
+    } finally {
+      for (const { socket } of idle) socket.destroy();
+    }
   });
 
   it("answers 413 when a streamed relay body passes the cap", async () => {
@@ -384,9 +410,7 @@ describe("Teams ingress on Node: framing and teardown", () => {
   });
 
   it("caps service bodies on the normalised path, as the handler routes them", async () => {
-    const headers = await relayServiceHeaders({ serviceSecret: "w".repeat(64), service: "identity", communityId, method: "POST",
-      url: "https://teams.example.test/teams/service/relay/events", body: "{}" });
-    const head = Object.entries(headers).filter(([name]) => name.toLowerCase() !== "content-type").map(([name, value]) => `${name}: ${value}\r\n`).join("");
+    const head = await serviceHead("w".repeat(64));
     for (const path of ["/teams/relay/../service/relay/events", "/teams/relay/%2e%2e/service/relay/events"]) {
       const response = await raw(`POST ${path} HTTP/1.1\r\nHost: teams.example.test\r\n${head}Content-Length: 2048\r\nConnection: close\r\n\r\n${"x".repeat(2048)}`);
       assert.match(response, /^HTTP\/1\.1 413 /, path);

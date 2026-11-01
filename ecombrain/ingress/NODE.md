@@ -28,12 +28,16 @@ The relay and identity bridge keep the env names listed in `src/index.ts` (`Rela
 Publish only to the tunnel: `docker run -p 127.0.0.1:8787:8787 ...` or a Docker network shared with cloudflared.
 A plain `-p 8787:8787` exposes the ingress on every host interface, around the tunnel.
 
+Reach the relay over a Docker network, not host networking on 127.0.0.1: the relay trusts loopback peers on
+`/internal/git/policy`, and every request the ingress forwards would arrive from loopback.
+
 ## Hardening (gate 66be6e1e)
 - Upstream framing is never copied from the client: length or chunking is derived from the body actually sent,
   GET/HEAD send no body, and every upstream call uses its own connection, so nothing can be smuggled to the relay.
 - Upgrades must be WebSocket and carry no body; anything else gets 400.
-- Bodies: relay paths 100 MB (the Workers limit); signed service paths 1 MB, because handler.ts buffers them before
-  checking the signature, with at most 32 such requests in flight (503 beyond). Over the cap: 413.
+- Bodies: relay paths 100 MB (the Workers limit); signed service paths 1 MB. handler.ts checks the service signature
+  over the declared body hash before it reads the body, so unsigned callers get 401 without holding anything; at most
+  32 signed body reads run at once (503 beyond). Over the cap: 413.
 - The client leaving cancels the upstream call; an upgrade the upstream doesn't answer in 10 s gets 504; idle upstream
   calls end after 60 s. Shutdown closes open WebSockets.
 - Only origin-form targets are routed (absolute-form, `//` and backslashes get 400).

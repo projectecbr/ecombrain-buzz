@@ -259,7 +259,7 @@ export function createNodeIngress(options: NodeIngressOptions): Server {
     const service = isServicePath(message.url ?? "", publicOrigin);
     const built = toRequest(message, publicOrigin, service ? maxServiceBytes : maxBytes);
     if (built instanceof Response) return built;
-    // handler.ts buffers a signed body before it checks the signature: bound how much of that runs at once.
+    // handler.ts reads a service body only after the signature passes: bound how many signed reads run at once.
     const counted = service && built.length !== undefined;
     if (counted && serviceInFlight >= maxServiceInFlight) return jsonError(503, "Teams service busy");
     if (counted) serviceInFlight += 1;
