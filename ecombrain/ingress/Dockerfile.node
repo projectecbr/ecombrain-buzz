@@ -1,5 +1,5 @@
 # Teams ingress on Node, for a VPS behind a tunnel (the Cloudflare worker build stays in index.ts).
-FROM node:24-slim
+FROM node:24.11.1-slim
 
 WORKDIR /app
 COPY package.json ./

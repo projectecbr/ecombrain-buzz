@@ -1,5 +1,5 @@
 /** Starts the Teams ingress on Node (VPS behind a tunnel). Same secrets as the worker; see NODE.md. */
-import { createNodeIngress } from "./node-server.ts";
+import { closeNodeIngress, createNodeIngress } from "./node-server.ts";
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -15,12 +15,18 @@ const server = createNodeIngress({
     TEAMS_OPERATOR_SERVICE_SECRET: required("TEAMS_OPERATOR_SERVICE_SECRET"),
     TEAMS_BUNKER_PUBKEY: required("TEAMS_BUNKER_PUBKEY"),
   },
-  relayUpstream: process.env.TEAMS_RELAY_UPSTREAM?.trim() || "http://127.0.0.1:3001",
-  identityBridgeUpstream: process.env.TEAMS_IDENTITY_BRIDGE_UPSTREAM?.trim() || "http://127.0.0.1:3002",
+  // Required, no default: inside a container 127.0.0.1 would be the ingress itself.
+  relayUpstream: required("TEAMS_RELAY_UPSTREAM"),
+  identityBridgeUpstream: required("TEAMS_IDENTITY_BRIDGE_UPSTREAM"),
   publicOrigin: required("TEAMS_PUBLIC_ORIGIN"),
 });
 
 const port = Number(process.env.PORT ?? 8787);
 // Loopback by default: the tunnel connects locally, nothing else should reach the ingress directly.
 server.listen(port, process.env.TEAMS_INGRESS_BIND?.trim() || "127.0.0.1");
-for (const signal of ["SIGTERM", "SIGINT"] as const) process.on(signal, () => server.close(() => process.exit(0)));
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    setTimeout(() => process.exit(1), 10_000).unref(); // deadline if something still hangs
+    void closeNodeIngress(server).then(() => process.exit(0));
+  });
+}

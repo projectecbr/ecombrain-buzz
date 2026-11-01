@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import { after, before, describe, it } from "node:test";
 
 import { relayServiceHeaders } from "./handler.ts";
-import { createNodeIngress } from "./node-server.ts";
+import { closeNodeIngress, createNodeIngress } from "./node-server.ts";
 
 // Placeholders only: no real hosts, keys or tokens.
 const token = "a".repeat(43);
@@ -207,5 +207,195 @@ describe("Teams ingress on Node", () => {
     dead.closeAllConnections();
     dead.close();
     assert.equal(response, 502);
+  });
+});
+
+// Gate 66be6e1e findings (OPUS1 + OPUS2): framing, teardown, service body cap. Each case failed on that sha.
+describe("Teams ingress on Node: framing and teardown", () => {
+  const probe = { requests: [], closed: 0, upgrades: 0, silentOpen: 0 };
+  let probeServer;
+  let silentServer;
+  let fast;
+  let fastPort;
+
+  function raw(text, targetPort = fastPort) {
+    return new Promise((resolve) => {
+      const socket = connect(targetPort, "127.0.0.1");
+      const chunks = [];
+      socket.on("data", (chunk) => chunks.push(chunk));
+      socket.on("close", () => resolve(Buffer.concat(chunks).toString()));
+      socket.write(text);
+      setTimeout(() => socket.destroy(), 400);
+    });
+  }
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const auth = `Host: teams.example.test\r\nCookie: ${cookie}\r\n`;
+
+  before(async () => {
+    probeServer = createServer((req, res) => {
+      const chunks = [];
+      req.on("data", (chunk) => chunks.push(chunk));
+      req.on("close", () => { probe.closed += 1; });
+      if (req.url === "/stream") {
+        res.writeHead(200);
+        const timer = setInterval(() => res.write("tick"), 20);
+        res.on("close", () => clearInterval(timer));
+        return;
+      }
+      if (req.url === "/upload") return; // reads the body forever, never answers
+      req.on("end", () => {
+        probe.requests.push({ method: req.method, url: req.url, host: req.headers.host, length: req.headers["content-length"], body: Buffer.concat(chunks).toString() });
+        res.end("ok");
+      });
+    });
+    probeServer.on("upgrade", () => { probe.upgrades += 1; });
+    silentServer = (await import("node:net")).createServer((socket) => {
+      probe.silentOpen += 1;
+      socket.on("close", () => { probe.silentOpen -= 1; });
+      socket.resume(); // read, so the peer closing is seen
+      socket.on("error", () => {});
+    });
+    const probePort = await listen(probeServer);
+    const silentPort = await listen(silentServer);
+    fast = createNodeIngress({
+      env: { TEAMS_INGRESS_SERVICE_SECRET: secret, TEAMS_PRODUCT_API_URL: "https://app.example.test", TEAMS_RELAY_SERVICE_SECRET: relayServiceSecret,
+        TEAMS_OPERATOR_SERVICE_SECRET: "o".repeat(32), TEAMS_BUNKER_PUBKEY: "b".repeat(64) },
+      relayUpstream: `http://127.0.0.1:${probePort}`,
+      identityBridgeUpstream: `http://127.0.0.1:${silentPort}`,
+      publicOrigin: "https://teams.example.test",
+      maxBodyBytes: 4096,
+      maxServiceBodyBytes: 1024,
+      upgradeHandshakeMs: 300,
+      upstreamIdleMs: 1_000,
+      fetcher: async (url) => {
+        await wait(new URL(url).pathname.endsWith("/session") && slowSession ? 200 : 0);
+        return product(url);
+      },
+    });
+    fastPort = await listen(fast);
+  });
+  let slowSession = false;
+
+  after(async () => {
+    await closeNodeIngress(fast);
+    for (const server of [probeServer, silentServer]) {
+      server.closeAllConnections?.();
+      server.close();
+    }
+  });
+
+  for (const method of ["DELETE", "OPTIONS"]) {
+    it(`frames a chunked ${method} body so a smuggled request never reaches the relay`, async () => {
+      const smuggled = "GET /admin/export HTTP/1.1\r\nHost: tenant-b.teams.example.internal\r\n\r\n";
+      const before = probe.requests.length;
+      const chunk = `${smuggled.length.toString(16)}\r\n${smuggled}\r\n0\r\n\r\n`;
+      await raw(`${method} /teams/relay/x HTTP/1.1\r\n${auth}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n${chunk}`);
+      await wait(100);
+      const seen = probe.requests.slice(before);
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].method, method);
+      assert.equal(seen[0].host, communityHost);
+      assert.equal(seen[0].body, smuggled);
+      assert.ok(!probe.requests.some((request) => request.url === "/admin/export"));
+    });
+  }
+
+  it("drops a GET body together with its length", async () => {
+    const before = probe.requests.length;
+    await raw(`GET /teams/relay/first HTTP/1.1\r\n${auth}Content-Length: 40\r\nConnection: close\r\n\r\n${"x".repeat(40)}`);
+    await wait(100);
+    const seen = probe.requests.slice(before);
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].length, undefined);
+    assert.equal(seen[0].body, "");
+  });
+
+  it("refuses upgrades that carry a body or are not WebSocket", async () => {
+    const before = probe.upgrades;
+    const withBody = await raw(`GET /teams/relay HTTP/1.1\r\n${auth}Upgrade: websocket\r\nConnection: Upgrade\r\nContent-Length: 7\r\n\r\nPAYLOAD`);
+    const h2c = await raw(`GET /teams/relay HTTP/1.1\r\n${auth}Upgrade: h2c\r\nConnection: Upgrade\r\n\r\n`);
+    assert.match(withBody, /^HTTP\/1\.1 400 /);
+    assert.match(h2c, /^HTTP\/1\.1 400 /);
+    assert.equal(probe.upgrades, before);
+  });
+
+  it("caps signed service bodies before the handler buffers them", async () => {
+    const productBefore = productCalls;
+    // Every service header well formed, the signature wrong: the handler would hash the body before refusing.
+    const headers = await relayServiceHeaders({ serviceSecret: "w".repeat(64), service: "identity", communityId, method: "POST",
+      url: "https://teams.example.test/teams/service/relay/events", body: "{}" });
+    const head = Object.entries(headers).filter(([name]) => name.toLowerCase() !== "content-type").map(([name, value]) => `${name}: ${value}\r\n`).join("");
+    const declared = await raw(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${head}Content-Length: 2048\r\nConnection: close\r\n\r\n${"x".repeat(2048)}`);
+    assert.match(declared, /^HTTP\/1\.1 413 /);
+    const chunk = "x".repeat(2048);
+    const streamed = await raw(`POST /teams/service/relay/events HTTP/1.1\r\nHost: teams.example.test\r\n${head}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n${chunk.length.toString(16)}\r\n${chunk}\r\n0\r\n\r\n`);
+    assert.match(streamed, /^HTTP\/1\.1 413 /);
+    assert.equal(productCalls, productBefore);
+  });
+
+  it("answers 413 when a streamed relay body passes the cap", async () => {
+    const chunk = "x".repeat(5000);
+    const response = await raw(`POST /teams/relay/x HTTP/1.1\r\n${auth}Transfer-Encoding: chunked\r\nConnection: close\r\n\r\n${chunk.length.toString(16)}\r\n${chunk}\r\n0\r\n\r\n`);
+    assert.match(response, /^HTTP\/1\.1 413 /);
+  });
+
+  it("closes the upstream when the client leaves a streaming response", async () => {
+    const before = probe.closed;
+    await raw(`GET /teams/relay/stream HTTP/1.1\r\n${auth}\r\n`);
+    await wait(300);
+    assert.equal(probe.closed, before + 1);
+  });
+
+  it("closes the upstream when the client drops mid-upload", async () => {
+    const before = probe.closed;
+    await raw(`POST /teams/relay/upload HTTP/1.1\r\n${auth}Content-Length: 1000\r\n\r\nabc`);
+    await wait(300);
+    assert.equal(probe.closed, before + 1);
+  });
+
+  it("opens no upstream for a WebSocket that left during the session check", async () => {
+    slowSession = true;
+    const before = probe.upgrades;
+    const socket = connect(fastPort, "127.0.0.1");
+    socket.write(`GET /teams/relay HTTP/1.1\r\n${auth}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    await wait(50);
+    socket.destroy();
+    await wait(400);
+    slowSession = false;
+    assert.equal(probe.upgrades, before);
+  });
+
+  it("times out an upgrade the upstream never answers, and frees its socket", async () => {
+    const response = await new Promise((resolve) => {
+      const socket = connect(fastPort, "127.0.0.1");
+      const chunks = [];
+      socket.on("data", (chunk) => chunks.push(chunk));
+      socket.on("close", () => resolve(Buffer.concat(chunks).toString()));
+      socket.write(`GET /teams/bunker HTTP/1.1\r\n${auth}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    });
+    assert.match(response, /^HTTP\/1\.1 504 Gateway Timeout/);
+    await wait(100);
+    assert.equal(probe.silentOpen, 0);
+  });
+
+  it("rejects backslash targets", async () => {
+    assert.match(await raw(`GET /\\evil.test/teams/relay/x HTTP/1.1\r\n${auth}Connection: close\r\n\r\n`), /^HTTP\/1\.1 400 /);
+  });
+
+  it("closes open WebSockets on shutdown", async () => {
+    const own = createNodeIngress({
+      env: { TEAMS_INGRESS_SERVICE_SECRET: secret, TEAMS_PRODUCT_API_URL: "https://app.example.test", TEAMS_RELAY_SERVICE_SECRET: relayServiceSecret,
+        TEAMS_OPERATOR_SERVICE_SECRET: "o".repeat(32), TEAMS_BUNKER_PUBKEY: "b".repeat(64) },
+      relayUpstream: `http://127.0.0.1:${relay.server.address().port}`, identityBridgeUpstream: `http://127.0.0.1:${bridge.server.address().port}`,
+      publicOrigin: "https://teams.example.test", fetcher: product,
+    });
+    const ownPort = await listen(own);
+    const closed = new Promise((resolve) => {
+      const socket = connect(ownPort, "127.0.0.1");
+      socket.on("close", resolve);
+      socket.once("data", () => void closeNodeIngress(own));
+      socket.write(`GET /teams/relay HTTP/1.1\r\n${auth}Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\r\n`);
+    });
+    await Promise.race([closed, wait(2_000).then(() => assert.fail("socket still open after shutdown"))]);
   });
 });
